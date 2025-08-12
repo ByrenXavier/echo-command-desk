@@ -102,6 +102,15 @@ const QAPage: React.FC = () => {
     toast({ title: "Accepted", description: `QA #${id} accepted in full.` });
   };
 
+  const statusToClass = (status: string | null | undefined) => {
+    const s = (status || '').toLowerCase();
+    if (s === 'pass' || s === 'passed') return 'qa-pill qa-pill--pass';
+    if (s === 'fail' || s === 'failed') return 'qa-pill qa-pill--fail';
+    if (s === 'partial pass' || s === 'partial' || s === 'partially accepted') return 'qa-pill qa-pill--partial';
+    if (s === 'pending') return 'qa-pill qa-pill--pending';
+    return 'qa-pill qa-pill--pending';
+  };
+
   return (
     <>
       <SEO title="QA Inspections – BSL AI Dashboard" description="QA inspections table with search, filters, pagination." />
@@ -197,7 +206,7 @@ const QAPage: React.FC = () => {
                             <TableCell>{row.manufacturing_item_description}</TableCell>
                             <TableCell>{row.rev}</TableCell>
                             <TableCell>
-                              <span className={`px-2 py-1 rounded-full text-xs border ${row.inspection_status === 'Pass' ? 'bg-green-100/60 text-green-700 border-green-200 dark:text-green-300 dark:bg-green-900/30 dark:border-green-800' : row.inspection_status === 'Fail' ? 'bg-red-100/60 text-red-700 border-red-200 dark:text-red-300 dark:bg-red-900/30 dark:border-red-800' : 'bg-yellow-100/60 text-yellow-700 border-yellow-200 dark:text-yellow-300 dark:bg-yellow-900/30 dark:border-yellow-800'}`}>
+                              <span className={statusToClass(row.inspection_status)}>
                                 {row.inspection_status || '—'}
                               </span>
                             </TableCell>
@@ -205,9 +214,9 @@ const QAPage: React.FC = () => {
                             <TableCell>{row.inspection_date ? new Date(row.inspection_date).toLocaleDateString() : '—'}</TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
-                                <Button variant="destructive" size="sm" onClick={() => handleReject(row.qa_id)} aria-label={`Reject QA ${row.qa_id}`}>Reject</Button>
-                                <Button variant="secondary" size="sm" onClick={() => handlePartial(row.qa_id)} aria-label={`Partially accept QA ${row.qa_id}`}>Partially accept</Button>
-                                <Button size="sm" onClick={() => handleAccept(row.qa_id)} aria-label={`Accept all for QA ${row.qa_id}`}>Accept all</Button>
+                                <Button variant="ghost" size="sm" className="qa-btn qa-btn--reject" onClick={() => handleReject(row.qa_id)} aria-label={`Reject QA ${row.qa_id}`}>Reject</Button>
+                                <Button variant="ghost" size="sm" className="qa-btn qa-btn--partial" onClick={() => handlePartial(row.qa_id)} aria-label={`Partially accept QA ${row.qa_id}`}>Partially accept</Button>
+                                <Button variant="ghost" size="sm" className="qa-btn qa-btn--accept" onClick={() => handleAccept(row.qa_id)} aria-label={`Accept all for QA ${row.qa_id}`}>Accept all</Button>
                               </div>
                             </TableCell>
                           </TableRow>
