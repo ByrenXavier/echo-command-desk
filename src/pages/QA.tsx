@@ -91,6 +91,17 @@ const QAPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Row action handlers (mock)
+  const handleReject = (id: number) => {
+    toast({ title: "Rejected", description: `QA #${id} marked as rejected.` });
+  };
+  const handlePartial = (id: number) => {
+    toast({ title: "Partially accepted", description: `QA #${id} marked as partially accepted.` });
+  };
+  const handleAccept = (id: number) => {
+    toast({ title: "Accepted", description: `QA #${id} accepted in full.` });
+  };
+
   return (
     <>
       <SEO title="QA Inspections – BSL AI Dashboard" description="QA inspections table with search, filters, pagination." />
@@ -171,12 +182,13 @@ const QAPage: React.FC = () => {
                         <TableHead>Status</TableHead>
                         <TableHead>Inspector</TableHead>
                         <TableHead>Inspected At</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {data.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground">No results</TableCell>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground">No results</TableCell>
                         </TableRow>
                       ) : (
                         data.map((row) => (
@@ -191,6 +203,13 @@ const QAPage: React.FC = () => {
                             </TableCell>
                             <TableCell>{row.inspected_by || '—'}</TableCell>
                             <TableCell>{row.inspection_date ? new Date(row.inspection_date).toLocaleDateString() : '—'}</TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex justify-end gap-2">
+                                <Button variant="destructive" size="sm" onClick={() => handleReject(row.qa_id)} aria-label={`Reject QA ${row.qa_id}`}>Reject</Button>
+                                <Button variant="secondary" size="sm" onClick={() => handlePartial(row.qa_id)} aria-label={`Partially accept QA ${row.qa_id}`}>Partially accept</Button>
+                                <Button size="sm" onClick={() => handleAccept(row.qa_id)} aria-label={`Accept all for QA ${row.qa_id}`}>Accept all</Button>
+                              </div>
+                            </TableCell>
                           </TableRow>
                         ))
                       )}
