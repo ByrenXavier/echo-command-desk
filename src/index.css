@@ -141,26 +141,29 @@ All colors MUST be HSL.
     border-color: hsl(var(--qa-pending) / 0.3);
   }
 
-  /* Action buttons */
+  /* Action buttons (tonal to match pills) */
   .qa-btn {
-    @apply h-8 px-3 rounded-md text-xs font-medium transition-colors;
+    @apply h-8 px-3 rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2;
     border: 1px solid transparent;
   }
   .qa-btn--reject {
-    background-color: hsl(var(--qa-btn-reject));
-    color: hsl(0 0% 100%);
+    color: hsl(var(--qa-btn-reject));
+    background-color: hsl(var(--qa-btn-reject) / 0.12) !important;
+    border-color: hsl(var(--qa-btn-reject) / 0.3) !important;
   }
-  .qa-btn--reject:hover { filter: brightness(0.95); }
+  .qa-btn--reject:hover { background-color: hsl(var(--qa-btn-reject) / 0.18) !important; }
 
   .qa-btn--partial {
-    background-color: hsl(var(--qa-btn-partial));
-    color: hsl(0 0% 0%);
+    color: hsl(var(--qa-btn-partial));
+    background-color: hsl(var(--qa-btn-partial) / 0.12) !important;
+    border-color: hsl(var(--qa-btn-partial) / 0.3) !important;
   }
-  .qa-btn--partial:hover { filter: brightness(0.95); }
+  .qa-btn--partial:hover { background-color: hsl(var(--qa-btn-partial) / 0.18) !important; }
 
   .qa-btn--accept {
-    background-color: hsl(var(--qa-btn-accept));
-    color: hsl(0 0% 100%);
+    color: hsl(var(--qa-btn-accept));
+    background-color: hsl(var(--qa-btn-accept) / 0.12) !important;
+    border-color: hsl(var(--qa-btn-accept) / 0.3) !important;
   }
-  .qa-btn--accept:hover { filter: brightness(0.95); }
+  .qa-btn--accept:hover { background-color: hsl(var(--qa-btn-accept) / 0.18) !important; }
 }
