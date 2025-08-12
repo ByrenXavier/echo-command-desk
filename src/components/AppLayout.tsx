@@ -8,7 +8,7 @@ const AppLayout: React.FC<{ children: React.ReactNode; className?: string }> = (
       <header className="sticky top-0 z-20 border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-14 items-center px-4 gap-3">
           <SidebarTrigger />
-          <span className="text-sm text-muted-foreground">BSL AI Dashboard</span>
+          <span className="text-base md:text-lg font-medium text-foreground">BSL AI Dashboard</span>
         </div>
       </header>
       <main className="flex-1 p-6">{children}</main>
