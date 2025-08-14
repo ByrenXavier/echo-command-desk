@@ -34,6 +34,60 @@ const LoadingDots = () => (
   </div>
 );
 
+// Function to format text content with proper styling
+const formatTextContent = (text: string): string => {
+  // First convert ASCII tables
+  let formattedText = convertAsciiTableToHtml(text);
+  
+  // Format markdown-style bold text (**text**)
+  formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Split text into lines for better processing
+  const lines = formattedText.split('\n');
+  const processedLines: string[] = [];
+  let inList = false;
+  let listItems: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    
+    // Check if this is a list item
+    if (line.startsWith('- ') || /^\d+\. /.test(line)) {
+      if (!inList) {
+        inList = true;
+        listItems = [];
+      }
+      const itemText = line.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '');
+      listItems.push(`<li>${itemText}</li>`);
+    } else {
+      // If we were in a list, close it
+      if (inList && listItems.length > 0) {
+        processedLines.push(`<ul class="list-disc list-inside space-y-1 my-2">${listItems.join('')}</ul>`);
+        inList = false;
+        listItems = [];
+      }
+      
+      // Process other line types
+      if (line.endsWith(':') && !line.includes('**')) {
+        processedLines.push(`<h3 class="font-semibold text-base mt-3 mb-2">${line}</h3>`);
+      } else if (line.includes('**Summary Statistics:**') || line.includes('**Key Non-Conformance Types:**') || line.includes('**This comprehensive')) {
+        processedLines.push(`<h4 class="font-semibold text-sm mt-4 mb-2 text-blue-600">${line}</h4>`);
+      } else if (line === '') {
+        processedLines.push('<br>');
+      } else {
+        processedLines.push(line);
+      }
+    }
+  }
+  
+  // Close any remaining list
+  if (inList && listItems.length > 0) {
+    processedLines.push(`<ul class="list-disc list-inside space-y-1 my-2">${listItems.join('')}</ul>`);
+  }
+  
+  return processedLines.join('\n');
+};
+
 // Function to convert ASCII tables to HTML
 const convertAsciiTableToHtml = (text: string): string => {
   // Check if this looks like an ASCII table (contains | and - characters in a table-like pattern)
@@ -866,9 +920,7 @@ const ChatPage: React.FC = () => {
                           // AI message - card with independent scrolling
                           <Card className="w-full message-card min-w-0">
                             <CardContent className="p-3 min-w-0">
-                              <div className="min-w-0 overflow-x-auto">
-                                {message.content}
-                              </div>
+                              <div className="min-w-0 overflow-x-auto" dangerouslySetInnerHTML={{ __html: formatTextContent(message.content) }} />
                               <div className="text-xs text-muted-foreground mt-2">{message.ts}</div>
                             </CardContent>
                           </Card>
