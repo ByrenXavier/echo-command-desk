@@ -393,4 +393,32 @@ All colors MUST be HSL.
     width: 100% !important;
     max-width: 100% !important;
   }
+
+  /* Ensure responsive layout for all screen sizes */
+  @media (max-width: 768px) {
+    .w-56 {
+      width: 200px !important;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .w-56 {
+      width: 180px !important;
+    }
+  }
+
+  /* Prevent horizontal overflow on all containers */
+  .min-w-0 {
+    min-width: 0 !important;
+  }
+
+  /* Ensure flex items don't overflow */
+  .flex > * {
+    min-width: 0;
+  }
+
+  /* Force all content to respect container bounds */
+  * {
+    box-sizing: border-box;
+  }
 }

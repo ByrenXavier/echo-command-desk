@@ -731,7 +731,7 @@ const ChatPage: React.FC = () => {
       <AppSidebarProvider>
         <AppSidebar />
         <AppLayout>
-          <Card className="h-[calc(100vh-200px)] flex flex-col main-chat-card" style={{ maxWidth: '100vw', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
+          <Card className="h-[calc(100vh-200px)] flex flex-col main-chat-card overflow-hidden" style={{ width: '100%', boxSizing: 'border-box' }}>
             <CardHeader className="flex-shrink-0 pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -773,10 +773,10 @@ const ChatPage: React.FC = () => {
               )}
             </CardHeader>
             
-            <div className={`flex flex-1 overflow-hidden ${showCommands || showSessions ? 'gap-0' : ''}`}>
+            <div className="flex flex-1 overflow-hidden min-w-0">
               {/* Commands Sidebar */}
               {showCommands && (
-                <div className="w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0">
+                <div className="w-56 sm:w-64 md:w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0 min-w-0">
                   <h3 className="font-medium mb-2 text-sm">Available Commands</h3>
                   <div className="space-y-3">
                     {commandSections.map((section) => (
@@ -803,7 +803,7 @@ const ChatPage: React.FC = () => {
               
               {/* Sessions Sidebar */}
               {showSessions && (
-                <div className="w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0">
+                <div className="w-56 sm:w-64 md:w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0 min-w-0">
                   <h3 className="font-medium mb-2 text-sm">Chat Sessions</h3>
                   {loading ? (
                     <p className="text-xs text-muted-foreground">Loading...</p>
@@ -833,8 +833,8 @@ const ChatPage: React.FC = () => {
               )}
               
               {/* Chat Area */}
-              <div className={`flex flex-col chat-container ${!showCommands && !showSessions ? 'w-full' : 'flex-1'}`} style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
-                <CardContent className="flex-1 overflow-y-auto p-3 space-y-3 chat-area" style={{ overflowX: 'hidden', maxWidth: '100%', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+              <div className="flex flex-col chat-container flex-1 min-w-0">
+                <CardContent className="flex-1 overflow-y-auto p-3 space-y-3 chat-area min-w-0">
                   {messages.length === 0 ? (
                     <div className="text-center text-muted-foreground py-4">
                       <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -864,9 +864,9 @@ const ChatPage: React.FC = () => {
                           </div>
                         ) : (
                           // AI message - card with independent scrolling
-                          <Card className="w-full message-card" style={{ maxWidth: '100%', overflow: 'hidden', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
-                            <CardContent className="p-3" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box' }}>
-                              <div style={{ width: '100%', maxWidth: '100%', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box', position: 'relative' }}>
+                          <Card className="w-full message-card min-w-0">
+                            <CardContent className="p-3 min-w-0">
+                              <div className="min-w-0 overflow-x-auto">
                                 {message.content}
                               </div>
                               <div className="text-xs text-muted-foreground mt-2">{message.ts}</div>
