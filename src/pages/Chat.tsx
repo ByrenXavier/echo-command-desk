@@ -590,6 +590,7 @@ const ChatPage: React.FC = () => {
               }
               return [...prev, assistantMsg];
             });
+            setSending(false);
           } catch (e) {
             console.error('Realtime handler error:', e);
           }
@@ -627,6 +628,7 @@ const ChatPage: React.FC = () => {
             ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
           };
           setMessages((prev) => prev.map(m => m.id === loadingId ? assistantMsg : m));
+          setSending(false);
           if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
           return;
         }
