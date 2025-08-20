@@ -498,8 +498,11 @@ const ChatPage: React.FC = () => {
 
         console.log('Sending chat webhook data:', webhookPayload);
         
-        // Use dev proxy to avoid CORS during local development
-        const webhookFetchResponse = await fetch('/api/chat', {
+        // Choose endpoint per environment: dev proxy vs production n8n URL
+        const chatEndpoint = import.meta.env.PROD
+          ? 'https://bslunifyone.app.n8n.cloud/webhook/chat'
+          : '/api/chat';
+        const webhookFetchResponse = await fetch(chatEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
