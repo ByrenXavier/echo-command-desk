@@ -27,7 +27,7 @@ const generateId = () => {
 
 // Loading animation component
 const LoadingDots = () => (
-  <div className="flex space-x-1">
+  <div className="flex items-end space-x-1 h-6">
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
@@ -646,7 +646,7 @@ const ChatPage: React.FC = () => {
   };
 
   const handleSend = async () => {
-    if (sending) return; // guard against rapid double-send
+    if (sending || hasPendingAssistant) return; // guard while waiting
     if (!input.trim()) return;
     setSending(true);
 
@@ -868,6 +868,11 @@ const ChatPage: React.FC = () => {
   const commandChips = useMemo(() => commandSections, []);
 
   const lastSync = useMemo(() => new Date().toLocaleString(), [messages.length]);
+
+  // Block new sends while a loading bubble is present
+  const hasPendingAssistant = useMemo(() =>
+    messages.some(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots),
+  [messages]);
 
   // Function to download inventory data as Excel
   const downloadInventory = async () => {
@@ -1101,15 +1106,15 @@ const ChatPage: React.FC = () => {
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
-                          handleSend();
+                          if (!hasPendingAssistant) handleSend();
                         }
                       }}
                       aria-label="Chat input"
-                      disabled={sending}
+                      disabled={sending || hasPendingAssistant}
                       className="h-8"
                     />
                   </div>
-                  <Button onClick={handleSend} disabled={sending} aria-label="Send message" size="sm" className="h-8">
+                  <Button onClick={handleSend} disabled={sending || hasPendingAssistant} aria-label="Send message" size="sm" className="h-8">
                     <Send className="h-3 w-3" />
                   </Button>
                 </div>
