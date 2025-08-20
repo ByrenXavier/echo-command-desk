@@ -558,6 +558,49 @@ const ChatPage: React.FC = () => {
     }
   }, []);
 
+  // Subscribe to Supabase Realtime for assistant inserts in current session
+  useEffect(() => {
+    if (!currentSession) return;
+
+    const channel = (supabase as any)
+      .channel(`chat_messages_session_${currentSession.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `session_id=eq.${currentSession.id}` },
+        (payload: any) => {
+          try {
+            const row = payload.new;
+            if (!row) return;
+            if (row.role !== 'assistant') return;
+            const html = formatTextContent(String(row.content ?? ''));
+            const assistantMsg: Msg = {
+              id: row.id || generateId(),
+              role: 'agent',
+              content: <div dangerouslySetInnerHTML={{ __html: html }} />,
+              ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
+            };
+            // Replace the latest loading dot message if present, else append
+            setMessages((prev) => {
+              const idx = prev.findIndex(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots);
+              if (idx !== -1) {
+                const copy = [...prev];
+                copy[idx] = assistantMsg;
+                return copy;
+              }
+              return [...prev, assistantMsg];
+            });
+          } catch (e) {
+            console.error('Realtime handler error:', e);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try { (supabase as any).removeChannel(channel); } catch {}
+    };
+  }, [currentSession]);
+
   const handleSend = async () => {
     if (!input.trim()) return;
     setSending(true);
@@ -747,67 +790,8 @@ const ChatPage: React.FC = () => {
         webhookResponse = { error: webhookError instanceof Error ? webhookError.message : 'Unknown error' };
       }
 
-      // Replace loading message with actual response
-      setMessages((m) => m.map(msg => 
-        msg.id === loadingMsg.id 
-          ? { ...msg, content: response }
-          : msg
-      ));
-
-      // Extract original text content for database storage
-      let originalText = '';
-      if (typeof response === 'string') {
-        originalText = response;
-      } else if (response && typeof response === 'object') {
-        // Try to extract text from React component
-        if ((response as any).props?.dangerouslySetInnerHTML?.__html) {
-          // This is our converted HTML, we need to get the original text
-          // We need to store the original text that was converted, not the HTML
-          // For now, let's store the webhook response text if available
-          if (webhookResponse && webhookResponse.output) {
-            originalText = webhookResponse.output;
-          } else if (webhookResponse && webhookResponse.message) {
-            originalText = webhookResponse.message;
-          } else if (webhookResponse && webhookResponse.content) {
-            originalText = webhookResponse.content;
-          } else if (webhookResponse && webhookResponse.text) {
-            originalText = webhookResponse.text;
-          } else if (webhookResponse && webhookResponse.response) {
-            originalText = webhookResponse.response;
-          } else {
-            // Fallback: try to extract from the HTML content
-            const htmlContent = (response as any).props.dangerouslySetInnerHTML.__html;
-            // Remove HTML tags to get text content
-            originalText = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-          }
-        } else if ((response as any).props?.children) {
-          // Simple text content
-          originalText = String((response as any).props.children);
-        } else if (React.isValidElement(response)) {
-          // This is a React component (like our ScrollableTable)
-          // We need to get the original text that was used to create this component
-          if (webhookResponse && webhookResponse.output) {
-            originalText = webhookResponse.output;
-          } else if (webhookResponse && webhookResponse.message) {
-            originalText = webhookResponse.message;
-          } else if (webhookResponse && webhookResponse.content) {
-            originalText = webhookResponse.content;
-          } else if (webhookResponse && webhookResponse.text) {
-            originalText = webhookResponse.text;
-          } else if (webhookResponse && webhookResponse.response) {
-            originalText = webhookResponse.response;
-          } else {
-            // Fallback: try to extract text from React component
-            originalText = '[REACT_COMPONENT]';
-          }
-        } else {
-          // Fallback
-          originalText = '[COMPLEX_RESPONSE]';
-        }
-      }
-
-      // Save assistant message to database with original text
-      await saveMessage(sessionToUse!.id, "assistant", originalText, webhookResponse);
+      // Do not set assistant response here. We will wait for Supabase Realtime insert
+      // from n8n and then update UI when it arrives.
 
       // Update session title if it's still "New Chat"
       if (sessionToUse!.title === 'New Chat') {
@@ -815,7 +799,7 @@ const ChatPage: React.FC = () => {
         await updateSessionTitle(sessionToUse!.id, newTitle);
       }
 
-      // Removed success toast notification
+      // Keep the title user-friendly even in async mode
     } catch (e: any) {
       // Replace loading message with error
       setMessages((m) => m.map(msg => 
