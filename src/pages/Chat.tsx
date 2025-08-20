@@ -6,7 +6,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Send, Copy, Plus, MessageSquare, Clock } from "lucide-react";
+import { Send, Copy, Plus, MessageSquare, Clock, Download } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -33,60 +33,6 @@ const LoadingDots = () => (
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
   </div>
 );
-
-// Function to format text content with proper styling
-const formatTextContent = (text: string): string => {
-  // First convert ASCII tables
-  let formattedText = convertAsciiTableToHtml(text);
-  
-  // Format markdown-style bold text (**text**)
-  formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  
-  // Split text into lines for better processing
-  const lines = formattedText.split('\n');
-  const processedLines: string[] = [];
-  let inList = false;
-  let listItems: string[] = [];
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    
-    // Check if this is a list item
-    if (line.startsWith('- ') || /^\d+\. /.test(line)) {
-      if (!inList) {
-        inList = true;
-        listItems = [];
-      }
-      const itemText = line.replace(/^[-•]\s*/, '').replace(/^\d+\.\s*/, '');
-      listItems.push(`<li>${itemText}</li>`);
-    } else {
-      // If we were in a list, close it
-      if (inList && listItems.length > 0) {
-        processedLines.push(`<ul class="list-disc list-inside space-y-1 my-2">${listItems.join('')}</ul>`);
-        inList = false;
-        listItems = [];
-      }
-      
-      // Process other line types
-      if (line.endsWith(':') && !line.includes('**')) {
-        processedLines.push(`<h3 class="font-semibold text-base mt-3 mb-2">${line}</h3>`);
-      } else if (line.includes('**Summary Statistics:**') || line.includes('**Key Non-Conformance Types:**') || line.includes('**This comprehensive')) {
-        processedLines.push(`<h4 class="font-semibold text-sm mt-4 mb-2 text-blue-600">${line}</h4>`);
-      } else if (line === '') {
-        processedLines.push('<br>');
-      } else {
-        processedLines.push(line);
-      }
-    }
-  }
-  
-  // Close any remaining list
-  if (inList && listItems.length > 0) {
-    processedLines.push(`<ul class="list-disc list-inside space-y-1 my-2">${listItems.join('')}</ul>`);
-  }
-  
-  return processedLines.join('\n');
-};
 
 // Function to convert ASCII tables to HTML
 const convertAsciiTableToHtml = (text: string): string => {
@@ -153,58 +99,33 @@ const convertAsciiTableToHtml = (text: string): string => {
         console.log('Found separator line:', trimmedLine);
         continue;
       }
-
+      
+      // Parse data rows
       if (trimmedLine.includes('|')) {
-        const cells = trimmedLine.split('|').map(cell => cell.trim()).filter(cell => cell !== '');
-        console.log('Parsed cells:', cells);
-        
-        if (!separatorFound) {
-          // This is the header row
-          headers = cells;
-          console.log('Found headers:', headers);
-        } else {
-          // This is a data row
-          if (cells.length > 0) {
+        const cells = trimmedLine.split('|').map(cell => cell.trim()).filter(cell => cell.length > 0);
+        if (cells.length > 0) {
+          if (!separatorFound) {
+            headers = cells;
+          } else {
             rows.push(cells);
-            console.log('Added row:', cells);
           }
         }
       }
     }
 
-    console.log('Final headers:', headers);
-    console.log('Final rows:', rows);
-
-    if (headers.length === 0 || rows.length === 0) {
-      console.log('No valid headers or rows found, trying fallback parsing');
-      
-      // Fallback: try to parse without relying on separator lines
-      const allLinesWithPipes = tableLines.filter(line => line.trim().includes('|'));
-      if (allLinesWithPipes.length >= 2) {
-        headers = allLinesWithPipes[0].split('|').map(cell => cell.trim()).filter(cell => cell !== '');
-        rows = allLinesWithPipes.slice(1).map(line => 
-          line.split('|').map(cell => cell.trim()).filter(cell => cell !== '')
-        ).filter(row => row.length > 0);
-        
-        console.log('Fallback parsing - headers:', headers);
-        console.log('Fallback parsing - rows:', rows);
-      }
+    if (headers.length > 0) {
+      tables.push({
+        start: tableStart,
+        end: tableEnd,
+        headers,
+        rows
+      });
     }
 
-    if (headers.length === 0 || rows.length === 0) {
-      console.log('No valid headers or rows found even with fallback, moving to next potential table');
-      currentIndex = tableEnd;
-      continue;
-    }
-
-    // Store table data for React component
-    tables.push({ start: tableStart, end: tableEnd, headers, rows });
-    
-    // Update currentIndex to continue looking for more tables
     currentIndex = tableEnd;
   }
 
-  // If we found tables, create HTML tables
+  // Convert tables to HTML
   if (tables.length > 0) {
     let result = '';
     let lastIndex = 0;
@@ -231,12 +152,7 @@ const convertAsciiTableToHtml = (text: string): string => {
       // Add body
       result += '<tbody>';
       table.rows.forEach((row, index) => {
-        result += `<tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafb'};">`;
-        table.headers.forEach((header, colIndex) => {
-          const cellContent = row[colIndex] || '';
-          result += `<td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap;">${cellContent}</td>`;
-        });
-        result += '</tr>';
+        result += `<tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafb'};"><td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap;">${row.join('</td><td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap;">')}</td></tr>`;
       });
       result += '</tbody></table></div></div>';
 
@@ -256,6 +172,25 @@ const convertAsciiTableToHtml = (text: string): string => {
   
   return text;
 };
+
+// Simple text formatting function
+const formatTextContent = (text: string): string => {
+  try {
+    // Basic markdown formatting
+    let formattedText = text
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>')
+      .replace(/\n\n/g, '<br><br>');
+    
+    return formattedText;
+  } catch (error) {
+    console.error('Error formatting text:', error);
+    return text;
+  }
+};
+
+
 
 // Mocked action handlers (replace with real endpoints later)
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -333,6 +268,7 @@ const ChatPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showSessions, setShowSessions] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   const ts = () => new Date().toLocaleTimeString();
 
@@ -404,12 +340,10 @@ const ChatPage: React.FC = () => {
 
       // Convert database messages to display format
       const displayMessages: Msg[] = (data || []).map((msg: any) => {
-        // Apply ASCII table conversion for assistant messages
+        // Format content for display
         let content: React.ReactNode;
         if (msg.role === 'assistant') {
-          // Convert the original text back to HTML for display
-          const convertedContent = convertAsciiTableToHtml(msg.content);
-          content = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          content = <div dangerouslySetInnerHTML={{ __html: formatTextContent(msg.content) }} />;
         } else {
           content = (
             <div>
@@ -564,7 +498,8 @@ const ChatPage: React.FC = () => {
 
         console.log('Sending chat webhook data:', webhookPayload);
         
-        const webhookFetchResponse = await fetch('https://bslunifyone.app.n8n.cloud/webhook/chat', {
+        // Use dev proxy to avoid CORS during local development
+        const webhookFetchResponse = await fetch('/api/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -590,35 +525,28 @@ const ChatPage: React.FC = () => {
             webhookResponse = webhookData;
             
             // Handle different response formats from n8n
-                          if (webhookData.output) {
-                // n8n returns { output: "message" }
-                const convertedContent = convertAsciiTableToHtml(webhookData.output);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.message) {
-                // Alternative format
-                const convertedContent = convertAsciiTableToHtml(webhookData.message);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.content) {
-                // Another alternative format
-                const convertedContent = convertAsciiTableToHtml(webhookData.content);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.text) {
-                // Another alternative format
-                const convertedContent = convertAsciiTableToHtml(webhookData.text);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (typeof webhookData === 'string') {
-                // Direct string response
-                const convertedContent = convertAsciiTableToHtml(webhookData);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.response) {
-                // Response field
-                const convertedContent = convertAsciiTableToHtml(webhookData.response);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else {
-                // Fallback: use the entire response as a string
-                const convertedContent = convertAsciiTableToHtml(JSON.stringify(webhookData));
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              }
+            if (webhookData.output) {
+              // n8n returns { output: "message" }
+              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.output) }} />;
+            } else if (webhookData.message) {
+              // Alternative format
+              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.message) }} />;
+            } else if (webhookData.content) {
+              // Another alternative format
+              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.content) }} />;
+            } else if (webhookData.text) {
+              // Another alternative format
+              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.text) }} />;
+            } else if (typeof webhookData === 'string') {
+              // Direct string response
+              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData) }} />;
+            } else if (webhookData.response) {
+              // Response field
+              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.response) }} />;
+            } else {
+              // Fallback: use the entire response as a string
+              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(JSON.stringify(webhookData)) }} />;
+            }
             
           } catch (parseError) {
             console.error('Failed to parse webhook response as JSON:', parseError);
@@ -639,23 +567,19 @@ const ChatPage: React.FC = () => {
           const mockResponse = r.ok ? 
             `Here are some details from the Delivery Orders (DOs) in the system:\n\n| ID | PO Number | Product Code | Ordered Date | Required Delivery Date | Ordered Quantity |\n|----|-----------|--------------|--------------|----------------------|------------------|\n| 1 | D-20266361-WB0 | WB395-2130-000-01/B | 2025-04-22 | 2025-07-25 | 1 |\n| 2 | D-20266361-WB0 | WB765-2104-000-00/B | 2025-04-22 | 2025-07-07 | 1 |\n| 3 | D-20273467-BB0 | 08088-0173-008-00/B | 2025-08-07 | 2026-02-02 | 533 |\n| 4 | D-20273467-BB0 | 08888-0031-051-00/A | 2025-08-07 | 2026-02-02 | 1217 |` :
             "Error retrieving delivery orders";
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
-          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
         } else if (lower.includes("check holding")) {
           const r = await checkHoldingArea();
           const mockResponse = `Holding Area Status:\n\n| Part | Quantity | Location | Status |\n|------|----------|----------|--------|\n| PN-100 | 5 | Holding A | Ready |\n| PN-200 | 12 | Holding B | Processing |\n| PN-300 | 3 | Holding C | Pending |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
-          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
         } else if (lower.includes("check full treatment")) {
           const r = await checkFullTreatment();
           const mockResponse = `Treatment Status:\n\n| Item | Stage | Duration | Status |\n|------|-------|----------|--------|\n| MI-203 | Heat Treat | 2 hours | In Progress |\n| MI-204 | Surface Finish | 1 hour | Completed |\n| MI-205 | Quality Check | 30 min | Pending |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
-          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
         } else if (lower.includes("check full ncr")) {
           const r = await checkFullNCR();
           const mockResponse = `NCR (Non-Conformance Reports):\n\n| NCR ID | Severity | Description | Status |\n|--------|----------|-------------|--------|\n| NCR-778 | High | Material defect in batch | Open |\n| NCR-779 | Medium | Dimensional tolerance issue | Under Review |\n| NCR-780 | Low | Minor surface blemish | Resolved |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
-          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
         } else if (lower.includes("generate do")) {
           const r = await generateDO();
           response = r.ok ? <a className="text-primary underline" href={r.link} target="_blank">Download DO</a> : "Error";
@@ -665,8 +589,7 @@ const ChatPage: React.FC = () => {
         } else if (lower.includes("parse supplier do")) {
           const r = await parseSupplierDO(null as any); // No file to pass
           const mockResponse = `Supplier DO Summary:\n\n| Field | Value |\n|-------|-------|\n| Supplier | ACME Corp |\n| Total Lines | 14 |\n| Total Amount | $12,450.00 |\n| Status | Processed |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
-          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
         } else if (lower.startsWith("approve po")) {
           const id = lower.split(/\s+/).pop() || "";
           const r = await approvePO(id);
@@ -779,6 +702,62 @@ const ChatPage: React.FC = () => {
 
   const lastSync = useMemo(() => new Date().toLocaleString(), [messages.length]);
 
+  // Function to download inventory data as Excel
+  const downloadInventory = async () => {
+    setDownloading(true);
+    try {
+      // Import xlsx dynamically to avoid SSR issues
+      const XLSX = await import('xlsx');
+      
+      // Fetch SGD data
+      const { data: sgdData, error: sgdError } = await supabase
+        .from('current_balance_sgd')
+        .select('*');
+      
+      if (sgdError) {
+        console.error('Error fetching SGD data:', sgdError);
+        toast({ title: "Error", description: "Failed to fetch SGD inventory data", variant: "destructive" });
+        return;
+      }
+      
+      // Fetch USD data
+      const { data: usdData, error: usdError } = await supabase
+        .from('current_balance_usd')
+        .select('*');
+      
+      if (usdError) {
+        console.error('Error fetching USD data:', usdError);
+        toast({ title: "Error", description: "Failed to fetch USD inventory data", variant: "destructive" });
+        return;
+      }
+      
+      // Create workbook
+      const workbook = XLSX.utils.book_new();
+      
+      // Convert data to worksheet format
+      const sgdWorksheet = XLSX.utils.json_to_sheet(sgdData || []);
+      const usdWorksheet = XLSX.utils.json_to_sheet(usdData || []);
+      
+      // Add worksheets to workbook
+      XLSX.utils.book_append_sheet(workbook, sgdWorksheet, 'Current Balance SGD');
+      XLSX.utils.book_append_sheet(workbook, usdWorksheet, 'Current Balance USD');
+      
+      // Generate filename with current date
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `BSL_Inventory_${date}.xlsx`;
+      
+      // Download the file
+      XLSX.writeFile(workbook, filename);
+      
+      toast({ title: "Success", description: "Inventory data downloaded successfully" });
+    } catch (error) {
+      console.error('Error downloading inventory:', error);
+      toast({ title: "Error", description: "Failed to download inventory data", variant: "destructive" });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <>
       <SEO title="Chat – BSL AI Dashboard" description="Command-driven chat for BSL operations." />
@@ -793,6 +772,15 @@ const ChatPage: React.FC = () => {
                   AI Assistant
                 </CardTitle>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadInventory}
+                    disabled={downloading}
+                  >
+                    <Download className="h-3 w-3 mr-1" />
+                    {downloading ? "Downloading..." : "Download Inventory"}
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -920,7 +908,13 @@ const ChatPage: React.FC = () => {
                           // AI message - card with independent scrolling
                           <Card className="w-full message-card min-w-0">
                             <CardContent className="p-3 min-w-0">
-                              <div className="min-w-0 overflow-x-auto" dangerouslySetInnerHTML={{ __html: formatTextContent(message.content) }} />
+                              <div className="min-w-0 overflow-x-auto">
+                                {typeof message.content === 'string' ? (
+                                  <div dangerouslySetInnerHTML={{ __html: formatTextContent(message.content) }} />
+                                ) : (
+                                  message.content
+                                )}
+                              </div>
                               <div className="text-xs text-muted-foreground mt-2">{message.ts}</div>
                             </CardContent>
                           </Card>
