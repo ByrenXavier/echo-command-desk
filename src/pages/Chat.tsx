@@ -173,20 +173,149 @@ const convertAsciiTableToHtml = (text: string): string => {
   return text;
 };
 
-// Simple text formatting function
+// Helpers for rich formatting
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+
+const jsonToTableHtml = (data: any[]): string => {
+  if (!Array.isArray(data) || data.length === 0) {
+    return `<pre class="bg-muted p-3 rounded overflow-x-auto">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+  }
+  // Collect headers from union of keys
+  const headerSet = new Set<string>();
+  data.forEach((row) => Object.keys(row || {}).forEach((k) => headerSet.add(k)));
+  const headers = Array.from(headerSet);
+  let html = '<div class="table-wrapper"><div class="table-scroll-wrapper"><table class="min-w-full text-sm">';
+  html += '<thead><tr>' + headers.map(h => `<th class="px-2 py-1 text-left border-b">${escapeHtml(h)}</th>`).join('') + '</tr></thead>';
+  html += '<tbody>' + data.map((row, i) => {
+    return '<tr>' + headers.map(h => `<td class="px-2 py-1 border-b whitespace-nowrap">${escapeHtml(String(row?.[h] ?? ''))}</td>`).join('') + '</tr>';
+  }).join('') + '</tbody></table></div></div>';
+  return html;
+};
+
+const csvToTableHtml = (csv: string): string => {
+  const lines = csv.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (lines.length < 2 || !lines[0].includes(',')) return '';
+  // naive CSV split, handles simple quoted cells
+  const splitCsvLine = (line: string): string[] => {
+    const cells: string[] = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else { inQuotes = !inQuotes; }
+      } else if (ch === ',' && !inQuotes) {
+        cells.push(current); current = '';
+      } else {
+        current += ch;
+      }
+    }
+    cells.push(current);
+    return cells.map(c => c.trim());
+  };
+  const rows = lines.map(splitCsvLine);
+  if (rows.length < 2) return '';
+  const headers = rows[0];
+  let html = '<div class="table-wrapper"><div class="table-scroll-wrapper"><table class="min-w-full text-sm">';
+  html += '<thead><tr>' + headers.map(h => `<th class="px-2 py-1 text-left border-b">${escapeHtml(h)}</th>`).join('') + '</tr></thead>';
+  html += '<tbody>' + rows.slice(1).map(r => '<tr>' + r.map(c => `<td class="px-2 py-1 border-b whitespace-nowrap">${escapeHtml(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table></div></div>';
+  return html;
+};
+
+// Rich formatter: detects JSON, CSV, code blocks, markdown tables, lists, headers, links
 const formatTextContent = (text: string): string => {
   try {
-    // Basic markdown formatting
-    let formattedText = text
+    if (!text || typeof text !== 'string') return '';
+    const raw = text.trim();
+
+    // 1) Code fences first (preserve blocks)
+    let formatted = raw.replace(/```(\w+)?\n([\s\S]*?)```/g, (_m, lang, code) => {
+      const language = lang ? String(lang) : 'text';
+      return `<pre class="bg-gray-100 p-3 rounded-md overflow-x-auto my-3"><code class="language-${escapeHtml(language)}">${escapeHtml(String(code))}</code></pre>`;
+    });
+
+    // 2) JSON (whole string)
+    if (/^\s*[\[{]/.test(raw)) {
+      try {
+        const obj = JSON.parse(raw);
+        if (Array.isArray(obj) && obj.every(v => typeof v === 'object' && v !== null)) {
+          return jsonToTableHtml(obj);
+        }
+        return `<pre class="bg-muted p-3 rounded overflow-x-auto">${escapeHtml(JSON.stringify(obj, null, 2))}</pre>`;
+      } catch { /* not JSON */ }
+    }
+
+    // 3) CSV (simple heuristic: at least two lines with commas, and header looks like words)
+    const csvCandidate = raw.match(/^(?:[^\n]*,.*\n){1,}[^\n]*,.*$/m);
+    if (csvCandidate) {
+      const html = csvToTableHtml(raw);
+      if (html) return html;
+    }
+
+    // 4) Markdown/ASCII tables → convert
+    formatted = convertAsciiTableToHtml(formatted);
+
+    // 5) Markdown headers
+    formatted = formatted
+      .replace(/^###\s+(.+)$/gm, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
+      .replace(/^##\s+(.+)$/gm, '<h2 class="text-xl font-bold mt-6 mb-3">$1</h2>')
+      .replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>');
+
+    // 6) Blockquotes and HR
+    formatted = formatted
+      .replace(/^>\s+(.+)$/gm, '<blockquote class="border-l-4 border-gray-300 pl-4 my-2 italic text-gray-700">$1</blockquote>')
+      .replace(/^---+$/gm, '<hr class="my-4 border-gray-300">');
+
+    // 7) Lists (ul/ol). Build by scanning lines to avoid breaking paragraphs
+    const lines = formatted.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*[-*]\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+          items.push(lines[i].replace(/^\s*[-*]\s+/, ''));
+          i++;
+        }
+        out.push('<ul class="list-disc list-inside space-y-1 my-2">' + items.map(li => `<li>${li}</li>`).join('') + '</ul>');
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
+          i++;
+        }
+        out.push('<ol class="list-decimal list-inside space-y-1 my-2">' + items.map(li => `<li>${li}</li>`).join('') + '</ol>');
+        continue;
+      }
+      out.push(line);
+      i++;
+    }
+    formatted = out.join('\n');
+
+    // 8) Inline styles: bold/italic/code/links
+    formatted = formatted
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
       .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>')
-      .replace(/\n\n/g, '<br><br>');
-    
-    return formattedText;
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>');
+
+    // 9) Paragraph spacing
+    formatted = formatted.replace(/\n\n+/g, '<br><br>');
+
+    // 10) If looks like full HTML document, show as code rather than render raw page
+    if (/<!DOCTYPE html>|<html[\s>]/i.test(raw)) {
+      return `<pre class="bg-muted p-3 rounded overflow-x-auto">${escapeHtml(raw)}</pre>`;
+    }
+
+    return formatted;
   } catch (error) {
     console.error('Error formatting text:', error);
-    return text;
+    return escapeHtml(text);
   }
 };
 
