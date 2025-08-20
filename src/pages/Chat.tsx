@@ -398,6 +398,7 @@ const ChatPage: React.FC = () => {
   const [showSessions, setShowSessions] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ts = () => new Date().toLocaleTimeString();
 
@@ -598,8 +599,49 @@ const ChatPage: React.FC = () => {
 
     return () => {
       try { (supabase as any).removeChannel(channel); } catch {}
+      if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
     };
   }, [currentSession]);
+
+  // Fallback polling if Realtime is unavailable (replication beta)
+  const startAssistantPolling = (sessionId: string, sinceISO: string, loadingId: string) => {
+    if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+    const started = Date.now();
+    const poll = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from('chat_messages')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('role', 'assistant')
+          .gt('created_at', sinceISO)
+          .order('created_at', { ascending: true })
+          .limit(1);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const row = data[0];
+          const html = formatTextContent(String(row.content ?? ''));
+          const assistantMsg: Msg = {
+            id: row.id || generateId(),
+            role: 'agent',
+            content: <div dangerouslySetInnerHTML={{ __html: html }} />,
+            ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
+          };
+          setMessages((prev) => prev.map(m => m.id === loadingId ? assistantMsg : m));
+          if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+          return;
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+      // stop after 3 minutes
+      if (Date.now() - started > 3 * 60 * 1000) {
+        if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+      }
+    };
+    pollRef.current = setInterval(poll, 2500);
+    // kick off immediately
+    void poll();
+  };
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -641,7 +683,8 @@ const ChatPage: React.FC = () => {
     setMessages((m) => [...m, userMsg]);
 
     // Add loading message
-    const loadingMsg: Msg = { id: generateId(), role: "agent", content: <LoadingDots />, ts: ts() };
+    const loadingMsgId = generateId();
+    const loadingMsg: Msg = { id: loadingMsgId, role: "agent", content: <LoadingDots />, ts: ts() };
     setMessages((m) => [...m, loadingMsg]);
 
     // Save user message to database
@@ -797,6 +840,12 @@ const ChatPage: React.FC = () => {
       if (sessionToUse!.title === 'New Chat') {
         const newTitle = input.length > 30 ? input.substring(0, 30) + '...' : input;
         await updateSessionTitle(sessionToUse!.id, newTitle);
+      }
+
+      // Start fallback polling in case Realtime is unavailable
+      if (sessionToUse) {
+        const sinceISO = new Date().toISOString();
+        startAssistantPolling(sessionToUse.id, sinceISO, loadingMsgId);
       }
 
       // Keep the title user-friendly even in async mode
