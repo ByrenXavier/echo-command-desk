@@ -646,6 +646,7 @@ const ChatPage: React.FC = () => {
   };
 
   const handleSend = async () => {
+    if (sending) return; // guard against rapid double-send
     if (!input.trim()) return;
     setSending(true);
 
@@ -860,7 +861,6 @@ const ChatPage: React.FC = () => {
       ));
       toast({ title: "Failed", description: e?.message ?? "Something went wrong" });
     } finally {
-      setSending(false);
       setInput("");
     }
   };
