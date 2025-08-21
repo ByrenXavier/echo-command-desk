@@ -368,6 +368,7 @@ const commandSections = [
     commands: [
       { label: "Check DO", example: "check do" },
       { label: "Check PO", example: "check po" },
+      { label: "Check Open PO", example: "check open po" },
       { label: "Check Holding Area", example: "check holding area" },
       { label: "Check Full Treatment", example: "check full treatment" },
       { label: "Check Full NCR", example: "check full ncr" },
