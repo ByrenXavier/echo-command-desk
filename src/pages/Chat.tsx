@@ -206,6 +206,70 @@ const convertAsciiTableToHtml = (text: string): string => {
   return text;
 };
 
+// Helper function to escape HTML
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+
+// Rich formatter: handles markdown formatting, lists, headers, bold text
+const formatTextContent = (text: string): string => {
+  try {
+    if (!text || typeof text !== 'string') return '';
+    const raw = text.trim();
+
+    // 1) Convert ASCII tables first
+    let formatted = convertAsciiTableToHtml(raw);
+
+    // 2) Markdown headers
+    formatted = formatted
+      .replace(/^###\s+(.+)$/gm, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
+      .replace(/^##\s+(.+)$/gm, '<h2 class="text-xl font-bold mt-6 mb-3">$1</h2>')
+      .replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>');
+
+    // 3) Lists (ul/ol). Build by scanning lines to avoid breaking paragraphs
+    const lines = formatted.split('\n');
+    const out: string[] = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*[-*]\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+          items.push(lines[i].replace(/^\s*[-*]\s+/, ''));
+          i++;
+        }
+        out.push('<ul class="list-disc list-inside space-y-1 my-2">' + items.map(li => `<li>${li}</li>`).join('') + '</ul>');
+        continue;
+      }
+      if (/^\s*\d+\.\s+/.test(line)) {
+        const items: string[] = [];
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
+          i++;
+        }
+        out.push('<ol class="list-decimal list-inside space-y-1 my-2">' + items.map(li => `<li>${li}</li>`).join('') + '</ol>');
+        continue;
+      }
+      out.push(line);
+      i++;
+    }
+    formatted = out.join('\n');
+
+    // 4) Inline styles: bold/italic/code
+    formatted = formatted
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>');
+
+    // 5) Paragraph spacing
+    formatted = formatted.replace(/\n\n+/g, '<br><br>');
+
+    return formatted;
+  } catch (error) {
+    console.error('Error formatting text:', error);
+    return escapeHtml(text);
+  }
+};
+
 // Mocked action handlers (replace with real endpoints later)
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -356,7 +420,7 @@ const ChatPage: React.FC = () => {
         let content: React.ReactNode;
         if (msg.role === 'assistant') {
           // Convert the original text back to HTML for display
-          const convertedContent = convertAsciiTableToHtml(msg.content);
+          const convertedContent = formatTextContent(msg.content);
           content = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else {
           content = (
@@ -538,35 +602,35 @@ const ChatPage: React.FC = () => {
             webhookResponse = webhookData;
             
             // Handle different response formats from n8n
-                          if (webhookData.output) {
-                // n8n returns { output: "message" }
-                const convertedContent = convertAsciiTableToHtml(webhookData.output);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.message) {
-                // Alternative format
-                const convertedContent = convertAsciiTableToHtml(webhookData.message);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.content) {
-                // Another alternative format
-                const convertedContent = convertAsciiTableToHtml(webhookData.content);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.text) {
-                // Another alternative format
-                const convertedContent = convertAsciiTableToHtml(webhookData.text);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (typeof webhookData === 'string') {
-                // Direct string response
-                const convertedContent = convertAsciiTableToHtml(webhookData);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else if (webhookData.response) {
-                // Response field
-                const convertedContent = convertAsciiTableToHtml(webhookData.response);
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              } else {
-                // Fallback: use the entire response as a string
-                const convertedContent = convertAsciiTableToHtml(JSON.stringify(webhookData));
-                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-              }
+                                      if (webhookData.output) {
+              // n8n returns { output: "message" }
+              const convertedContent = formatTextContent(webhookData.output);
+              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+            } else if (webhookData.message) {
+              // Alternative format
+              const convertedContent = formatTextContent(webhookData.message);
+              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+            } else if (webhookData.content) {
+              // Another alternative format
+              const convertedContent = formatTextContent(webhookData.content);
+              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+            } else if (webhookData.text) {
+              // Another alternative format
+              const convertedContent = formatTextContent(webhookData.text);
+              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+            } else if (typeof webhookData === 'string') {
+              // Direct string response
+              const convertedContent = formatTextContent(webhookData);
+              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+            } else if (webhookData.response) {
+              // Response field
+              const convertedContent = formatTextContent(webhookData.response);
+              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+            } else {
+              // Fallback: use the entire response as a string
+              const convertedContent = formatTextContent(JSON.stringify(webhookData));
+              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+            }
             
           } catch (parseError) {
             console.error('Failed to parse webhook response as JSON:', parseError);
@@ -587,22 +651,22 @@ const ChatPage: React.FC = () => {
           const mockResponse = r.ok ? 
             `Here are some details from the Delivery Orders (DOs) in the system:\n\n| ID | PO Number | Product Code | Ordered Date | Required Delivery Date | Ordered Quantity |\n|----|-----------|--------------|--------------|----------------------|------------------|\n| 1 | D-20266361-WB0 | WB395-2130-000-01/B | 2025-04-22 | 2025-07-25 | 1 |\n| 2 | D-20266361-WB0 | WB765-2104-000-00/B | 2025-04-22 | 2025-07-07 | 1 |\n| 3 | D-20273467-BB0 | 08088-0173-008-00/B | 2025-08-07 | 2026-02-02 | 533 |\n| 4 | D-20273467-BB0 | 08888-0031-051-00/A | 2025-08-07 | 2026-02-02 | 1217 |` :
             "Error retrieving delivery orders";
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          const convertedContent = formatTextContent(mockResponse);
           response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("check holding")) {
           const r = await checkHoldingArea();
           const mockResponse = `Holding Area Status:\n\n| Part | Quantity | Location | Status |\n|------|----------|----------|--------|\n| PN-100 | 5 | Holding A | Ready |\n| PN-200 | 12 | Holding B | Processing |\n| PN-300 | 3 | Holding C | Pending |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          const convertedContent = formatTextContent(mockResponse);
           response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("check full treatment")) {
           const r = await checkFullTreatment();
           const mockResponse = `Treatment Status:\n\n| Item | Stage | Duration | Status |\n|------|-------|----------|--------|\n| MI-203 | Heat Treat | 2 hours | In Progress |\n| MI-204 | Surface Finish | 1 hour | Completed |\n| MI-205 | Quality Check | 30 min | Pending |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          const convertedContent = formatTextContent(mockResponse);
           response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("check full ncr")) {
           const r = await checkFullNCR();
           const mockResponse = `NCR (Non-Conformance Reports):\n\n| NCR ID | Severity | Description | Status |\n|--------|----------|-------------|--------|\n| NCR-778 | High | Material defect in batch | Open |\n| NCR-779 | Medium | Dimensional tolerance issue | Under Review |\n| NCR-780 | Low | Minor surface blemish | Resolved |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          const convertedContent = formatTextContent(mockResponse);
           response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("generate do")) {
           const r = await generateDO();
@@ -613,7 +677,7 @@ const ChatPage: React.FC = () => {
         } else if (lower.includes("parse supplier do")) {
           const r = await parseSupplierDO(null as any); // No file to pass
           const mockResponse = `Supplier DO Summary:\n\n| Field | Value |\n|-------|-------|\n| Supplier | ACME Corp |\n| Total Lines | 14 |\n| Total Amount | $12,450.00 |\n| Status | Processed |`;
-          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          const convertedContent = formatTextContent(mockResponse);
           response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.startsWith("approve po")) {
           const id = lower.split(/\s+/).pop() || "";
