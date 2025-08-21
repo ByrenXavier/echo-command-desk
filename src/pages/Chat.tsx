@@ -6,7 +6,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Send, Copy, Plus, MessageSquare, Clock, Download } from "lucide-react";
+import { Send, Copy, Plus, MessageSquare, Clock } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -27,7 +27,7 @@ const generateId = () => {
 
 // Loading animation component
 const LoadingDots = () => (
-  <div className="flex items-end space-x-1 h-6">
+  <div className="flex space-x-1">
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
@@ -36,18 +36,15 @@ const LoadingDots = () => (
 
 // Function to convert ASCII tables to HTML
 const convertAsciiTableToHtml = (text: string): string => {
-      // Check if this looks like an ASCII table (contains | and - characters in a table-like pattern)
-    // Also check for en dashes (−) and em dashes (—) that might be used instead of regular hyphens
-    if (!text.includes('|') || (!text.includes('-') && !text.includes('−') && !text.includes('—'))) {
-      return text;
-    }
+  // Check if this looks like an ASCII table (contains | and - characters in a table-like pattern)
+  if (!text.includes('|') || !text.includes('-')) {
+    return text;
+  }
 
       console.log('Attempting to parse ASCII table:', text.substring(0, 200) + '...');
     console.log('Full text length:', text.length);
     console.log('Contains pipes:', text.includes('|'));
     console.log('Contains hyphens:', text.includes('-'));
-    console.log('Contains en dashes:', text.includes('−'));
-    console.log('Contains em dashes:', text.includes('—'));
 
   const lines = text.split('\n');
   let result = text;
@@ -69,11 +66,9 @@ const convertAsciiTableToHtml = (text: string): string => {
         if (!inTable) {
           inTable = true;
           tableStart = i;
-          console.log('Table start detected at line', i, 'with', pipeCount, 'pipes');
         }
       } else if (inTable && pipeCount < 3) {
         tableEnd = i;
-        console.log('Table end detected at line', i, 'with', pipeCount, 'pipes');
         break;
       }
     }
@@ -101,43 +96,64 @@ const convertAsciiTableToHtml = (text: string): string => {
     for (const line of tableLines) {
       const trimmedLine = line.trim();
       
-      // Skip separator lines (lines with only |, -, −, —, and spaces)
-      if (/^[|\s\-−—]+$/.test(trimmedLine)) {
+      // Skip separator lines (lines with only |, -, and spaces)
+      if (/^[|\s-]+$/.test(trimmedLine)) {
         separatorFound = true;
         console.log('Found separator line:', trimmedLine);
         continue;
       }
-      
-      // Parse data rows
+
       if (trimmedLine.includes('|')) {
-        const cells = trimmedLine.split('|').map(cell => cell.trim()).filter(cell => cell.length > 0);
-        if (cells.length > 0) {
-          if (!separatorFound) {
-            headers = cells;
-          } else {
+        const cells = trimmedLine.split('|').map(cell => cell.trim()).filter(cell => cell !== '');
+        console.log('Parsed cells:', cells);
+        
+        if (!separatorFound) {
+          // This is the header row
+          headers = cells;
+          console.log('Found headers:', headers);
+        } else {
+          // This is a data row
+          if (cells.length > 0) {
             rows.push(cells);
+            console.log('Added row:', cells);
           }
         }
       }
     }
 
-    if (headers.length > 0) {
-      console.log('Found table with headers:', headers);
-      console.log('Table rows count:', rows.length);
-      tables.push({
-        start: tableStart,
-        end: tableEnd,
-        headers,
-        rows
-      });
-    } else {
-      console.log('No headers found for table at lines', tableStart, 'to', tableEnd);
+    console.log('Final headers:', headers);
+    console.log('Final rows:', rows);
+
+    if (headers.length === 0 || rows.length === 0) {
+      console.log('No valid headers or rows found, trying fallback parsing');
+      
+      // Fallback: try to parse without relying on separator lines
+      const allLinesWithPipes = tableLines.filter(line => line.trim().includes('|'));
+      if (allLinesWithPipes.length >= 2) {
+        headers = allLinesWithPipes[0].split('|').map(cell => cell.trim()).filter(cell => cell !== '');
+        rows = allLinesWithPipes.slice(1).map(line => 
+          line.split('|').map(cell => cell.trim()).filter(cell => cell !== '')
+        ).filter(row => row.length > 0);
+        
+        console.log('Fallback parsing - headers:', headers);
+        console.log('Fallback parsing - rows:', rows);
+      }
     }
 
+    if (headers.length === 0 || rows.length === 0) {
+      console.log('No valid headers or rows found even with fallback, moving to next potential table');
+      currentIndex = tableEnd;
+      continue;
+    }
+
+    // Store table data for React component
+    tables.push({ start: tableStart, end: tableEnd, headers, rows });
+    
+    // Update currentIndex to continue looking for more tables
     currentIndex = tableEnd;
   }
 
-  // Convert tables to HTML
+  // If we found tables, create HTML tables
   if (tables.length > 0) {
     let result = '';
     let lastIndex = 0;
@@ -151,13 +167,13 @@ const convertAsciiTableToHtml = (text: string): string => {
         }
       }
 
-      // Add HTML table with better responsive design
-      result += '<div style="width: 100%; margin: 1rem 0; overflow: hidden; position: relative; box-sizing: border-box;" class="table-wrapper"><div style="width: 100%; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 0.5rem; position: relative; box-sizing: border-box; display: block;" class="table-scroll-wrapper"><table style="width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.75rem; table-layout: fixed; display: table;">';
+      // Add HTML table with proper horizontal scrolling
+      result += '<div style="width: 100%; margin: 1rem 0; overflow: hidden; position: relative; box-sizing: border-box;" class="table-wrapper"><div style="width: 100%; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 0.5rem; position: relative; box-sizing: border-box; display: block;" class="table-scroll-wrapper"><table style="width: max-content; border-collapse: collapse; font-size: 0.75rem; table-layout: auto; display: table;">';
       
       // Add header
       result += '<thead style="background-color: #f9fafb;"><tr>';
       table.headers.forEach(header => {
-        result += `<th style="padding: 0.5rem; text-align: left; font-weight: 500; color: #374151; border-bottom: 1px solid #d1d5db; white-space: nowrap; min-width: 80px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${header}</th>`;
+        result += `<th style="padding: 0.5rem; text-align: left; font-weight: 500; color: #374151; border-bottom: 1px solid #d1d5db; white-space: nowrap;">${header}</th>`;
       });
       result += '</tr></thead>';
       
@@ -165,19 +181,9 @@ const convertAsciiTableToHtml = (text: string): string => {
       result += '<tbody>';
       table.rows.forEach((row, index) => {
         result += `<tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafb'};">`;
-        row.forEach(cell => {
-          // Handle empty cells and long text
-          const cellContent = cell.trim() || '—';
-          const isLongText = cellContent.length > 50;
-          const isAddress = cellContent.toLowerCase().includes('address') || cellContent.includes('VDL') || cellContent.includes('Singapore');
-          
-          if (isAddress && cellContent.length > 100) {
-            // For addresses, show first part with ellipsis and full text on hover
-            const shortContent = cellContent.substring(0, 80) + '...';
-            result += `<td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap; min-width: 80px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${cellContent}">${shortContent}</td>`;
-          } else {
-            result += `<td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; ${isLongText ? 'white-space: normal; word-wrap: break-word; max-width: 200px;' : 'white-space: nowrap;'} min-width: 80px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${cellContent}">${cellContent}</td>`;
-          }
+        table.headers.forEach((header, colIndex) => {
+          const cellContent = row[colIndex] || '';
+          result += `<td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap;">${cellContent}</td>`;
         });
         result += '</tr>';
       });
@@ -199,164 +205,6 @@ const convertAsciiTableToHtml = (text: string): string => {
   
   return text;
 };
-
-// Helpers for rich formatting
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
-
-const jsonToTableHtml = (data: any[]): string => {
-  if (!Array.isArray(data) || data.length === 0) {
-    return `<pre class="bg-muted p-3 rounded overflow-x-auto">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
-  }
-  // Collect headers from union of keys
-  const headerSet = new Set<string>();
-  data.forEach((row) => Object.keys(row || {}).forEach((k) => headerSet.add(k)));
-  const headers = Array.from(headerSet);
-  let html = '<div class="table-wrapper"><div class="table-scroll-wrapper"><table class="min-w-full text-sm">';
-  html += '<thead><tr>' + headers.map(h => `<th class="px-2 py-1 text-left border-b">${escapeHtml(h)}</th>`).join('') + '</tr></thead>';
-  html += '<tbody>' + data.map((row, i) => {
-    return '<tr>' + headers.map(h => `<td class="px-2 py-1 border-b whitespace-nowrap">${escapeHtml(String(row?.[h] ?? ''))}</td>`).join('') + '</tr>';
-  }).join('') + '</tbody></table></div></div>';
-  return html;
-};
-
-const csvToTableHtml = (csv: string): string => {
-  const lines = csv.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
-  if (lines.length < 2 || !lines[0].includes(',')) return '';
-  // naive CSV split, handles simple quoted cells
-  const splitCsvLine = (line: string): string[] => {
-    const cells: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-        else { inQuotes = !inQuotes; }
-      } else if (ch === ',' && !inQuotes) {
-        cells.push(current); current = '';
-      } else {
-        current += ch;
-      }
-    }
-    cells.push(current);
-    return cells.map(c => c.trim());
-  };
-  const rows = lines.map(splitCsvLine);
-  if (rows.length < 2) return '';
-  const headers = rows[0];
-  let html = '<div class="table-wrapper"><div class="table-scroll-wrapper"><table class="min-w-full text-sm">';
-  html += '<thead><tr>' + headers.map(h => `<th class="px-2 py-1 text-left border-b">${escapeHtml(h)}</th>`).join('') + '</tr></thead>';
-  html += '<tbody>' + rows.slice(1).map(r => '<tr>' + r.map(c => `<td class="px-2 py-1 border-b whitespace-nowrap">${escapeHtml(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table></div></div>';
-  return html;
-};
-
-// Rich formatter: detects JSON, CSV, code blocks, markdown tables, lists, headers, links
-const formatTextContent = (text: string): string => {
-  try {
-    if (!text || typeof text !== 'string') return '';
-    const raw = text.trim();
-
-    // 1) Code fences first (preserve blocks)
-    let formatted = raw.replace(/```(\w+)?\n([\s\S]*?)```/g, (_m, lang, code) => {
-      const language = lang ? String(lang) : 'text';
-      return `<pre class="bg-gray-100 p-3 rounded-md overflow-x-auto my-3"><code class="language-${escapeHtml(language)}">${escapeHtml(String(code))}</code></pre>`;
-    });
-
-    // 2) JSON (whole string)
-    if (/^\s*[\[{]/.test(raw)) {
-      try {
-        const obj = JSON.parse(raw);
-        if (Array.isArray(obj) && obj.every(v => typeof v === 'object' && v !== null)) {
-          return jsonToTableHtml(obj);
-        }
-        return `<pre class="bg-muted p-3 rounded overflow-x-auto">${escapeHtml(JSON.stringify(obj, null, 2))}</pre>`;
-      } catch { /* not JSON */ }
-    }
-
-    // 3) CSV (simple heuristic: at least two lines with commas, and header looks like words)
-    const csvCandidate = raw.match(/^(?:[^\n]*,.*\n){1,}[^\n]*,.*$/m);
-    if (csvCandidate) {
-      const html = csvToTableHtml(raw);
-      if (html) return html;
-    }
-
-    // 4) Markdown/ASCII tables → convert
-    formatted = convertAsciiTableToHtml(formatted);
-
-    // 5) Markdown headers and improve summary formatting
-    formatted = formatted
-      .replace(/^###\s+(.+)$/gm, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
-      .replace(/^##\s+(.+)$/gm, '<h2 class="text-xl font-bold mt-6 mb-3">$1</h2>')
-      .replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
-      // Improve summary sections with better spacing
-      .replace(/\*\*(.+?)\*\*:\s*/g, '<strong>$1:</strong> ')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      // Fix extra hyphens in bullet points
-      .replace(/^-+\s*/, '• ')
-      .replace(/^\s*-\s*/, '• ');
-
-    // 6) Blockquotes and HR
-    formatted = formatted
-      .replace(/^>\s+(.+)$/gm, '<blockquote class="border-l-4 border-gray-300 pl-4 my-2 italic text-gray-700">$1</blockquote>')
-      .replace(/^---+$/gm, '<hr class="my-4 border-gray-300">');
-
-    // 7) Lists (ul/ol). Build by scanning lines to avoid breaking paragraphs
-    const lines = formatted.split('\n');
-    const out: string[] = [];
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-      if (/^\s*[-*]\s+/.test(line)) {
-        const items: string[] = [];
-        while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
-          items.push(lines[i].replace(/^\s*[-*]\s+/, ''));
-          i++;
-        }
-        out.push('<ul class="list-disc list-inside space-y-1 my-2">' + items.map(li => `<li>${li}</li>`).join('') + '</ul>');
-        continue;
-      }
-      if (/^\s*\d+\.\s+/.test(line)) {
-        const items: string[] = [];
-        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
-          items.push(lines[i].replace(/^\s*\d+\.\s+/, ''));
-          i++;
-        }
-        out.push('<ol class="list-decimal list-inside space-y-1 my-2">' + items.map(li => `<li>${li}</li>`).join('') + '</ol>');
-        continue;
-      }
-      out.push(line);
-      i++;
-    }
-    formatted = out.join('\n');
-
-    // 8) Inline styles: bold/italic/code/links
-    formatted = formatted
-      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em>$1</em>')
-      .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>');
-
-    // 9) Paragraph spacing and fix incomplete sentences
-    formatted = formatted
-      .replace(/\n\n+/g, '<br><br>')
-      // Fix incomplete sentences that end abruptly
-      .replace(/([^.!?])\n([A-Z][a-z])/g, '$1 $2')
-      .replace(/([^.!?])\s*$/, '$1...'); // Add ellipsis to incomplete sentences
-
-    // 10) If looks like full HTML document, show as code rather than render raw page
-    if (/<!DOCTYPE html>|<html[\s>]/i.test(raw)) {
-      return `<pre class="bg-muted p-3 rounded overflow-x-auto">${escapeHtml(raw)}</pre>`;
-    }
-
-    return formatted;
-  } catch (error) {
-    console.error('Error formatting text:', error);
-    return escapeHtml(text);
-  }
-};
-
-
 
 // Mocked action handlers (replace with real endpoints later)
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -397,8 +245,6 @@ const commandSections = [
     title: "📊 Record Agent Tools",
     commands: [
       { label: "Check DO", example: "check do" },
-      { label: "Check PO", example: "check po" },
-      { label: "Check Open PO", example: "check open po" },
       { label: "Check Holding Area", example: "check holding area" },
       { label: "Check Full Treatment", example: "check full treatment" },
       { label: "Check Full NCR", example: "check full ncr" },
@@ -435,8 +281,6 @@ const ChatPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showSessions, setShowSessions] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
-  const [downloading, setDownloading] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ts = () => new Date().toLocaleTimeString();
 
@@ -508,10 +352,12 @@ const ChatPage: React.FC = () => {
 
       // Convert database messages to display format
       const displayMessages: Msg[] = (data || []).map((msg: any) => {
-        // Format content for display
+        // Apply ASCII table conversion for assistant messages
         let content: React.ReactNode;
         if (msg.role === 'assistant') {
-          content = <div dangerouslySetInnerHTML={{ __html: formatTextContent(msg.content) }} />;
+          // Convert the original text back to HTML for display
+          const convertedContent = convertAsciiTableToHtml(msg.content);
+          content = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else {
           content = (
             <div>
@@ -597,165 +443,7 @@ const ChatPage: React.FC = () => {
     }
   }, []);
 
-  // Subscribe to Supabase Realtime for assistant inserts in current session
-  useEffect(() => {
-    if (!currentSession) return;
-
-    const channel = (supabase as any)
-      .channel(`chat_messages_session_${currentSession.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `session_id=eq.${currentSession.id}` },
-        (payload: any) => {
-          try {
-            console.log('Realtime event received:', payload);
-            const row = payload.new;
-            if (!row) {
-              console.log('No new row in payload');
-              return;
-            }
-            if (row.role !== 'assistant') {
-              console.log('Row is not assistant message, role:', row.role);
-              return;
-            }
-            console.log('Processing assistant message from Realtime:', row);
-            const html = formatTextContent(String(row.content ?? ''));
-            const assistantMsg: Msg = {
-              id: row.id || generateId(),
-              role: 'agent',
-              content: <div dangerouslySetInnerHTML={{ __html: html }} />,
-              ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
-            };
-            // Replace the latest loading dot message if present, else append
-            setMessages((prev) => {
-              const idx = prev.findIndex(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots);
-              if (idx !== -1) {
-                console.log('Replacing loading message at index:', idx);
-                const copy = [...prev];
-                copy[idx] = assistantMsg;
-                return copy;
-              }
-              console.log('No loading message found, appending assistant message');
-              return [...prev, assistantMsg];
-            });
-            setSending(false);
-            // Clear any active polling since we got the message via Realtime
-            if (pollRef.current) {
-              console.log('Clearing poll interval due to Realtime message');
-              clearInterval(pollRef.current as any);
-              pollRef.current = null;
-            }
-          } catch (e) {
-            console.error('Realtime handler error:', e);
-          }
-        }
-      )
-      .subscribe((status: any) => {
-        console.log('Realtime subscription status:', status);
-        if (status === 'SUBSCRIBED') {
-          console.log('Realtime subscription active');
-        } else if (status === 'CHANNEL_ERROR') {
-          console.log('Realtime subscription error, falling back to polling');
-        }
-      });
-
-    return () => {
-      console.log('Cleaning up Realtime subscription and polling');
-      try { 
-        (supabase as any).removeChannel(channel); 
-        console.log('Realtime channel removed');
-      } catch (e) {
-        console.error('Error removing Realtime channel:', e);
-      }
-      if (pollRef.current) { 
-        console.log('Clearing poll interval on cleanup');
-        clearInterval(pollRef.current as any); 
-        pollRef.current = null; 
-      }
-    };
-  }, [currentSession]);
-
-  // Fallback polling if Realtime is unavailable (replication beta)
-  const startAssistantPolling = (sessionId: string, sinceISO: string, loadingId: string) => {
-    if (pollRef.current) { 
-      console.log('Clearing existing poll interval');
-      clearInterval(pollRef.current as any); 
-      pollRef.current = null; 
-    }
-    
-    const started = Date.now();
-    let pollCount = 0;
-    
-    const poll = async () => {
-      pollCount++;
-      try {
-        console.log(`Polling attempt ${pollCount} for assistant message in session ${sessionId} since ${sinceISO}`);
-        const { data, error } = await (supabase as any)
-          .from('chat_messages')
-          .select('*')
-          .eq('session_id', sessionId)
-          .eq('role', 'assistant')
-          .gt('created_at', sinceISO)
-          .order('created_at', { ascending: true })
-          .limit(1);
-          
-        if (error) {
-          console.error('Polling database error:', error);
-          return;
-        }
-        
-        if (Array.isArray(data) && data.length > 0) {
-          console.log('Found assistant message via polling:', data[0]);
-          const row = data[0];
-          const html = formatTextContent(String(row.content ?? ''));
-          const assistantMsg: Msg = {
-            id: row.id || generateId(),
-            role: 'agent',
-            content: <div dangerouslySetInnerHTML={{ __html: html }} />,
-            ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
-          };
-          
-          // Clear the polling interval first
-          if (pollRef.current) { 
-            clearInterval(pollRef.current as any); 
-            pollRef.current = null; 
-          }
-          
-          setMessages((prev) => prev.map(m => m.id === loadingId ? assistantMsg : m));
-          setSending(false);
-          return;
-        } else {
-          console.log(`No assistant message found yet (attempt ${pollCount})`);
-        }
-      } catch (e) {
-        console.error('Polling error:', e);
-      }
-      
-      // stop after 5 minutes (increased from 3 minutes)
-      if (Date.now() - started > 5 * 60 * 1000) {
-        console.log('Polling timeout reached after 5 minutes');
-        if (pollRef.current) { 
-          clearInterval(pollRef.current as any); 
-          pollRef.current = null; 
-        }
-        // Replace loading message with timeout error
-        setMessages((prev) => prev.map(m => 
-          m.id === loadingId 
-            ? { ...m, content: <p className="text-destructive">Response timeout after 5 minutes. Please try again.</p> }
-            : m
-        ));
-        setSending(false);
-      }
-    };
-    
-    console.log('Starting polling with interval 2500ms');
-    pollRef.current = setInterval(poll, 2500);
-    // kick off immediately
-    void poll();
-  };
-
   const handleSend = async () => {
-    if (sending || hasPendingAssistant) return; // guard while waiting
     if (!input.trim()) return;
     setSending(true);
 
@@ -795,8 +483,7 @@ const ChatPage: React.FC = () => {
     setMessages((m) => [...m, userMsg]);
 
     // Add loading message
-    const loadingMsgId = generateId();
-    const loadingMsg: Msg = { id: loadingMsgId, role: "agent", content: <LoadingDots />, ts: ts() };
+    const loadingMsg: Msg = { id: generateId(), role: "agent", content: <LoadingDots />, ts: ts() };
     setMessages((m) => [...m, loadingMsg]);
 
     // Save user message to database
@@ -825,11 +512,7 @@ const ChatPage: React.FC = () => {
 
         console.log('Sending chat webhook data:', webhookPayload);
         
-        // Choose endpoint per environment: dev proxy vs production n8n URL
-        const chatEndpoint = import.meta.env.PROD
-          ? 'https://bslunifyone.app.n8n.cloud/webhook/chat'
-          : '/api/chat';
-        const webhookFetchResponse = await fetch(chatEndpoint, {
+        const webhookFetchResponse = await fetch('https://bslunifyone.app.n8n.cloud/webhook/chat', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -855,28 +538,35 @@ const ChatPage: React.FC = () => {
             webhookResponse = webhookData;
             
             // Handle different response formats from n8n
-            if (webhookData.output) {
-              // n8n returns { output: "message" }
-              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.output) }} />;
-            } else if (webhookData.message) {
-              // Alternative format
-              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.message) }} />;
-            } else if (webhookData.content) {
-              // Another alternative format
-              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.content) }} />;
-            } else if (webhookData.text) {
-              // Another alternative format
-              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.text) }} />;
-            } else if (typeof webhookData === 'string') {
-              // Direct string response
-              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData) }} />;
-            } else if (webhookData.response) {
-              // Response field
-              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(webhookData.response) }} />;
-            } else {
-              // Fallback: use the entire response as a string
-              response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(JSON.stringify(webhookData)) }} />;
-            }
+                          if (webhookData.output) {
+                // n8n returns { output: "message" }
+                const convertedContent = convertAsciiTableToHtml(webhookData.output);
+                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+              } else if (webhookData.message) {
+                // Alternative format
+                const convertedContent = convertAsciiTableToHtml(webhookData.message);
+                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+              } else if (webhookData.content) {
+                // Another alternative format
+                const convertedContent = convertAsciiTableToHtml(webhookData.content);
+                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+              } else if (webhookData.text) {
+                // Another alternative format
+                const convertedContent = convertAsciiTableToHtml(webhookData.text);
+                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+              } else if (typeof webhookData === 'string') {
+                // Direct string response
+                const convertedContent = convertAsciiTableToHtml(webhookData);
+                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+              } else if (webhookData.response) {
+                // Response field
+                const convertedContent = convertAsciiTableToHtml(webhookData.response);
+                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+              } else {
+                // Fallback: use the entire response as a string
+                const convertedContent = convertAsciiTableToHtml(JSON.stringify(webhookData));
+                response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+              }
             
           } catch (parseError) {
             console.error('Failed to parse webhook response as JSON:', parseError);
@@ -897,19 +587,23 @@ const ChatPage: React.FC = () => {
           const mockResponse = r.ok ? 
             `Here are some details from the Delivery Orders (DOs) in the system:\n\n| ID | PO Number | Product Code | Ordered Date | Required Delivery Date | Ordered Quantity |\n|----|-----------|--------------|--------------|----------------------|------------------|\n| 1 | D-20266361-WB0 | WB395-2130-000-01/B | 2025-04-22 | 2025-07-25 | 1 |\n| 2 | D-20266361-WB0 | WB765-2104-000-00/B | 2025-04-22 | 2025-07-07 | 1 |\n| 3 | D-20273467-BB0 | 08088-0173-008-00/B | 2025-08-07 | 2026-02-02 | 533 |\n| 4 | D-20273467-BB0 | 08888-0031-051-00/A | 2025-08-07 | 2026-02-02 | 1217 |` :
             "Error retrieving delivery orders";
-          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
+          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("check holding")) {
           const r = await checkHoldingArea();
           const mockResponse = `Holding Area Status:\n\n| Part | Quantity | Location | Status |\n|------|----------|----------|--------|\n| PN-100 | 5 | Holding A | Ready |\n| PN-200 | 12 | Holding B | Processing |\n| PN-300 | 3 | Holding C | Pending |`;
-          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
+          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("check full treatment")) {
           const r = await checkFullTreatment();
           const mockResponse = `Treatment Status:\n\n| Item | Stage | Duration | Status |\n|------|-------|----------|--------|\n| MI-203 | Heat Treat | 2 hours | In Progress |\n| MI-204 | Surface Finish | 1 hour | Completed |\n| MI-205 | Quality Check | 30 min | Pending |`;
-          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
+          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("check full ncr")) {
           const r = await checkFullNCR();
           const mockResponse = `NCR (Non-Conformance Reports):\n\n| NCR ID | Severity | Description | Status |\n|--------|----------|-------------|--------|\n| NCR-778 | High | Material defect in batch | Open |\n| NCR-779 | Medium | Dimensional tolerance issue | Under Review |\n| NCR-780 | Low | Minor surface blemish | Resolved |`;
-          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
+          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("generate do")) {
           const r = await generateDO();
           response = r.ok ? <a className="text-primary underline" href={r.link} target="_blank">Download DO</a> : "Error";
@@ -919,7 +613,8 @@ const ChatPage: React.FC = () => {
         } else if (lower.includes("parse supplier do")) {
           const r = await parseSupplierDO(null as any); // No file to pass
           const mockResponse = `Supplier DO Summary:\n\n| Field | Value |\n|-------|-------|\n| Supplier | ACME Corp |\n| Total Lines | 14 |\n| Total Amount | $12,450.00 |\n| Status | Processed |`;
-          response = <div dangerouslySetInnerHTML={{ __html: formatTextContent(mockResponse) }} />;
+          const convertedContent = convertAsciiTableToHtml(mockResponse);
+          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.startsWith("approve po")) {
           const id = lower.split(/\s+/).pop() || "";
           const r = await approvePO(id);
@@ -945,8 +640,67 @@ const ChatPage: React.FC = () => {
         webhookResponse = { error: webhookError instanceof Error ? webhookError.message : 'Unknown error' };
       }
 
-      // Do not set assistant response here. We will wait for Supabase Realtime insert
-      // from n8n and then update UI when it arrives.
+      // Replace loading message with actual response
+      setMessages((m) => m.map(msg => 
+        msg.id === loadingMsg.id 
+          ? { ...msg, content: response }
+          : msg
+      ));
+
+      // Extract original text content for database storage
+      let originalText = '';
+      if (typeof response === 'string') {
+        originalText = response;
+      } else if (response && typeof response === 'object') {
+        // Try to extract text from React component
+        if ((response as any).props?.dangerouslySetInnerHTML?.__html) {
+          // This is our converted HTML, we need to get the original text
+          // We need to store the original text that was converted, not the HTML
+          // For now, let's store the webhook response text if available
+          if (webhookResponse && webhookResponse.output) {
+            originalText = webhookResponse.output;
+          } else if (webhookResponse && webhookResponse.message) {
+            originalText = webhookResponse.message;
+          } else if (webhookResponse && webhookResponse.content) {
+            originalText = webhookResponse.content;
+          } else if (webhookResponse && webhookResponse.text) {
+            originalText = webhookResponse.text;
+          } else if (webhookResponse && webhookResponse.response) {
+            originalText = webhookResponse.response;
+          } else {
+            // Fallback: try to extract from the HTML content
+            const htmlContent = (response as any).props.dangerouslySetInnerHTML.__html;
+            // Remove HTML tags to get text content
+            originalText = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+          }
+        } else if ((response as any).props?.children) {
+          // Simple text content
+          originalText = String((response as any).props.children);
+        } else if (React.isValidElement(response)) {
+          // This is a React component (like our ScrollableTable)
+          // We need to get the original text that was used to create this component
+          if (webhookResponse && webhookResponse.output) {
+            originalText = webhookResponse.output;
+          } else if (webhookResponse && webhookResponse.message) {
+            originalText = webhookResponse.message;
+          } else if (webhookResponse && webhookResponse.content) {
+            originalText = webhookResponse.content;
+          } else if (webhookResponse && webhookResponse.text) {
+            originalText = webhookResponse.text;
+          } else if (webhookResponse && webhookResponse.response) {
+            originalText = webhookResponse.response;
+          } else {
+            // Fallback: try to extract text from React component
+            originalText = '[REACT_COMPONENT]';
+          }
+        } else {
+          // Fallback
+          originalText = '[COMPLEX_RESPONSE]';
+        }
+      }
+
+      // Save assistant message to database with original text
+      await saveMessage(sessionToUse!.id, "assistant", originalText, webhookResponse);
 
       // Update session title if it's still "New Chat"
       if (sessionToUse!.title === 'New Chat') {
@@ -954,13 +708,7 @@ const ChatPage: React.FC = () => {
         await updateSessionTitle(sessionToUse!.id, newTitle);
       }
 
-      // Start fallback polling in case Realtime is unavailable
-      if (sessionToUse) {
-        const sinceISO = new Date().toISOString();
-        startAssistantPolling(sessionToUse.id, sinceISO, loadingMsgId);
-      }
-
-      // Keep the title user-friendly even in async mode
+      // Removed success toast notification
     } catch (e: any) {
       // Replace loading message with error
       setMessages((m) => m.map(msg => 
@@ -970,6 +718,7 @@ const ChatPage: React.FC = () => {
       ));
       toast({ title: "Failed", description: e?.message ?? "Something went wrong" });
     } finally {
+      setSending(false);
       setInput("");
     }
   };
@@ -978,74 +727,13 @@ const ChatPage: React.FC = () => {
 
   const lastSync = useMemo(() => new Date().toLocaleString(), [messages.length]);
 
-  // Block new sends while a loading bubble is present
-  const hasPendingAssistant = useMemo(() =>
-    messages.some(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots),
-  [messages]);
-
-  // Function to download inventory data as Excel
-  const downloadInventory = async () => {
-    setDownloading(true);
-    try {
-      // Import xlsx dynamically to avoid SSR issues
-      const XLSX = await import('xlsx');
-      
-      // Fetch SGD data
-      const { data: sgdData, error: sgdError } = await supabase
-        .from('current_balance_sgd')
-        .select('*');
-      
-      if (sgdError) {
-        console.error('Error fetching SGD data:', sgdError);
-        toast({ title: "Error", description: "Failed to fetch SGD inventory data", variant: "destructive" });
-        return;
-      }
-      
-      // Fetch USD data
-      const { data: usdData, error: usdError } = await supabase
-        .from('current_balance_usd')
-        .select('*');
-      
-      if (usdError) {
-        console.error('Error fetching USD data:', usdError);
-        toast({ title: "Error", description: "Failed to fetch USD inventory data", variant: "destructive" });
-        return;
-      }
-      
-      // Create workbook
-      const workbook = XLSX.utils.book_new();
-      
-      // Convert data to worksheet format
-      const sgdWorksheet = XLSX.utils.json_to_sheet(sgdData || []);
-      const usdWorksheet = XLSX.utils.json_to_sheet(usdData || []);
-      
-      // Add worksheets to workbook
-      XLSX.utils.book_append_sheet(workbook, sgdWorksheet, 'Current Balance SGD');
-      XLSX.utils.book_append_sheet(workbook, usdWorksheet, 'Current Balance USD');
-      
-      // Generate filename with current date
-      const date = new Date().toISOString().split('T')[0];
-      const filename = `BSL_Inventory_${date}.xlsx`;
-      
-      // Download the file
-      XLSX.writeFile(workbook, filename);
-      
-      toast({ title: "Success", description: "Inventory data downloaded successfully" });
-    } catch (error) {
-      console.error('Error downloading inventory:', error);
-      toast({ title: "Error", description: "Failed to download inventory data", variant: "destructive" });
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   return (
     <>
       <SEO title="Chat – BSL AI Dashboard" description="Command-driven chat for BSL operations." />
       <AppSidebarProvider>
         <AppSidebar />
         <AppLayout>
-          <Card className="h-[calc(100vh-200px)] flex flex-col main-chat-card overflow-hidden" style={{ width: '100%', boxSizing: 'border-box' }}>
+          <Card className="h-[calc(100vh-200px)] flex flex-col main-chat-card" style={{ maxWidth: '100vw', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}>
             <CardHeader className="flex-shrink-0 pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2 text-lg">
@@ -1053,15 +741,6 @@ const ChatPage: React.FC = () => {
                   AI Assistant
                 </CardTitle>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadInventory}
-                    disabled={downloading}
-                  >
-                    <Download className="h-3 w-3 mr-1" />
-                    {downloading ? "Downloading..." : "Download Inventory"}
-                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1096,10 +775,10 @@ const ChatPage: React.FC = () => {
               )}
             </CardHeader>
             
-            <div className="flex flex-1 overflow-hidden min-w-0">
+            <div className={`flex flex-1 overflow-hidden ${showCommands || showSessions ? 'gap-0' : ''}`}>
               {/* Commands Sidebar */}
               {showCommands && (
-                <div className="w-56 sm:w-64 md:w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0 min-w-0">
+                <div className="w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0">
                   <h3 className="font-medium mb-2 text-sm">Available Commands</h3>
                   <div className="space-y-3">
                     {commandSections.map((section) => (
@@ -1126,7 +805,7 @@ const ChatPage: React.FC = () => {
               
               {/* Sessions Sidebar */}
               {showSessions && (
-                <div className="w-56 sm:w-64 md:w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0 min-w-0">
+                <div className="w-56 border-r bg-muted/20 p-3 overflow-y-auto flex-shrink-0">
                   <h3 className="font-medium mb-2 text-sm">Chat Sessions</h3>
                   {loading ? (
                     <p className="text-xs text-muted-foreground">Loading...</p>
@@ -1156,8 +835,8 @@ const ChatPage: React.FC = () => {
               )}
               
               {/* Chat Area */}
-              <div className="flex flex-col chat-container flex-1 min-w-0">
-                <CardContent className="flex-1 overflow-y-auto p-3 space-y-3 chat-area min-w-0">
+              <div className={`flex flex-col chat-container ${!showCommands && !showSessions ? 'w-full' : 'flex-1'}`} style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
+                <CardContent className="flex-1 overflow-y-auto p-3 space-y-3 chat-area" style={{ overflowX: 'hidden', maxWidth: '100%', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
                   {messages.length === 0 ? (
                     <div className="text-center text-muted-foreground py-4">
                       <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -1187,14 +866,10 @@ const ChatPage: React.FC = () => {
                           </div>
                         ) : (
                           // AI message - card with independent scrolling
-                          <Card className="w-full message-card min-w-0">
-                            <CardContent className="p-3 min-w-0">
-                              <div className="min-w-0 overflow-x-auto">
-                                {typeof message.content === 'string' ? (
-                                  <div dangerouslySetInnerHTML={{ __html: formatTextContent(message.content) }} />
-                                ) : (
-                                  message.content
-                                )}
+                          <Card className="w-full message-card" style={{ maxWidth: '100%', overflow: 'hidden', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+                            <CardContent className="p-3" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box' }}>
+                              <div style={{ width: '100%', maxWidth: '100%', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box', position: 'relative' }}>
+                                {message.content}
                               </div>
                               <div className="text-xs text-muted-foreground mt-2">{message.ts}</div>
                             </CardContent>
@@ -1215,15 +890,15 @@ const ChatPage: React.FC = () => {
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && !e.shiftKey) {
                           e.preventDefault();
-                          if (!hasPendingAssistant) handleSend();
+                          handleSend();
                         }
                       }}
                       aria-label="Chat input"
-                      disabled={sending || hasPendingAssistant}
+                      disabled={sending}
                       className="h-8"
                     />
                   </div>
-                  <Button onClick={handleSend} disabled={sending || hasPendingAssistant} aria-label="Send message" size="sm" className="h-8">
+                  <Button onClick={handleSend} disabled={sending} aria-label="Send message" size="sm" className="h-8">
                     <Send className="h-3 w-3" />
                   </Button>
                 </div>
