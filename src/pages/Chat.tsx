@@ -596,9 +596,17 @@ const ChatPage: React.FC = () => {
         { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `session_id=eq.${currentSession.id}` },
         (payload: any) => {
           try {
+            console.log('Realtime event received:', payload);
             const row = payload.new;
-            if (!row) return;
-            if (row.role !== 'assistant') return;
+            if (!row) {
+              console.log('No new row in payload');
+              return;
+            }
+            if (row.role !== 'assistant') {
+              console.log('Row is not assistant message, role:', row.role);
+              return;
+            }
+            console.log('Processing assistant message from Realtime:', row);
             const html = formatTextContent(String(row.content ?? ''));
             const assistantMsg: Msg = {
               id: row.id || generateId(),
@@ -610,33 +618,66 @@ const ChatPage: React.FC = () => {
             setMessages((prev) => {
               const idx = prev.findIndex(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots);
               if (idx !== -1) {
+                console.log('Replacing loading message at index:', idx);
                 const copy = [...prev];
                 copy[idx] = assistantMsg;
                 return copy;
               }
+              console.log('No loading message found, appending assistant message');
               return [...prev, assistantMsg];
             });
             setSending(false);
+            // Clear any active polling since we got the message via Realtime
+            if (pollRef.current) {
+              console.log('Clearing poll interval due to Realtime message');
+              clearInterval(pollRef.current as any);
+              pollRef.current = null;
+            }
           } catch (e) {
             console.error('Realtime handler error:', e);
           }
         }
       )
-      .subscribe();
+      .subscribe((status: any) => {
+        console.log('Realtime subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('Realtime subscription active');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.log('Realtime subscription error, falling back to polling');
+        }
+      });
 
     return () => {
-      try { (supabase as any).removeChannel(channel); } catch {}
-      if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+      console.log('Cleaning up Realtime subscription and polling');
+      try { 
+        (supabase as any).removeChannel(channel); 
+        console.log('Realtime channel removed');
+      } catch (e) {
+        console.error('Error removing Realtime channel:', e);
+      }
+      if (pollRef.current) { 
+        console.log('Clearing poll interval on cleanup');
+        clearInterval(pollRef.current as any); 
+        pollRef.current = null; 
+      }
     };
   }, [currentSession]);
 
   // Fallback polling if Realtime is unavailable (replication beta)
   const startAssistantPolling = (sessionId: string, sinceISO: string, loadingId: string) => {
-    if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+    if (pollRef.current) { 
+      console.log('Clearing existing poll interval');
+      clearInterval(pollRef.current as any); 
+      pollRef.current = null; 
+    }
+    
     const started = Date.now();
+    let pollCount = 0;
+    
     const poll = async () => {
+      pollCount++;
       try {
-        console.log(`Polling for assistant message in session ${sessionId} since ${sinceISO}`);
+        console.log(`Polling attempt ${pollCount} for assistant message in session ${sessionId} since ${sinceISO}`);
         const { data, error } = await (supabase as any)
           .from('chat_messages')
           .select('*')
@@ -645,7 +686,13 @@ const ChatPage: React.FC = () => {
           .gt('created_at', sinceISO)
           .order('created_at', { ascending: true })
           .limit(1);
-        if (!error && Array.isArray(data) && data.length > 0) {
+          
+        if (error) {
+          console.error('Polling database error:', error);
+          return;
+        }
+        
+        if (Array.isArray(data) && data.length > 0) {
           console.log('Found assistant message via polling:', data[0]);
           const row = data[0];
           const html = formatTextContent(String(row.content ?? ''));
@@ -655,18 +702,30 @@ const ChatPage: React.FC = () => {
             content: <div dangerouslySetInnerHTML={{ __html: html }} />,
             ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
           };
+          
+          // Clear the polling interval first
+          if (pollRef.current) { 
+            clearInterval(pollRef.current as any); 
+            pollRef.current = null; 
+          }
+          
           setMessages((prev) => prev.map(m => m.id === loadingId ? assistantMsg : m));
           setSending(false);
-          if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
           return;
+        } else {
+          console.log(`No assistant message found yet (attempt ${pollCount})`);
         }
       } catch (e) {
         console.error('Polling error:', e);
       }
+      
       // stop after 5 minutes (increased from 3 minutes)
       if (Date.now() - started > 5 * 60 * 1000) {
         console.log('Polling timeout reached after 5 minutes');
-        if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+        if (pollRef.current) { 
+          clearInterval(pollRef.current as any); 
+          pollRef.current = null; 
+        }
         // Replace loading message with timeout error
         setMessages((prev) => prev.map(m => 
           m.id === loadingId 
@@ -676,6 +735,8 @@ const ChatPage: React.FC = () => {
         setSending(false);
       }
     };
+    
+    console.log('Starting polling with interval 2500ms');
     pollRef.current = setInterval(poll, 2500);
     // kick off immediately
     void poll();
