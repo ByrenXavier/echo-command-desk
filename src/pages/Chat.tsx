@@ -36,12 +36,18 @@ const LoadingDots = () => (
 
 // Function to convert ASCII tables to HTML
 const convertAsciiTableToHtml = (text: string): string => {
-  // Check if this looks like an ASCII table (contains | and - characters in a table-like pattern)
-  if (!text.includes('|') || !text.includes('-')) {
-    return text;
-  }
+      // Check if this looks like an ASCII table (contains | and - characters in a table-like pattern)
+    // Also check for en dashes (−) and em dashes (—) that might be used instead of regular hyphens
+    if (!text.includes('|') || (!text.includes('-') && !text.includes('−') && !text.includes('—'))) {
+      return text;
+    }
 
-  console.log('Attempting to parse ASCII table:', text.substring(0, 200) + '...');
+      console.log('Attempting to parse ASCII table:', text.substring(0, 200) + '...');
+    console.log('Full text length:', text.length);
+    console.log('Contains pipes:', text.includes('|'));
+    console.log('Contains hyphens:', text.includes('-'));
+    console.log('Contains en dashes:', text.includes('−'));
+    console.log('Contains em dashes:', text.includes('—'));
 
   const lines = text.split('\n');
   let result = text;
@@ -63,9 +69,11 @@ const convertAsciiTableToHtml = (text: string): string => {
         if (!inTable) {
           inTable = true;
           tableStart = i;
+          console.log('Table start detected at line', i, 'with', pipeCount, 'pipes');
         }
       } else if (inTable && pipeCount < 3) {
         tableEnd = i;
+        console.log('Table end detected at line', i, 'with', pipeCount, 'pipes');
         break;
       }
     }
@@ -93,8 +101,8 @@ const convertAsciiTableToHtml = (text: string): string => {
     for (const line of tableLines) {
       const trimmedLine = line.trim();
       
-      // Skip separator lines (lines with only |, -, and spaces)
-      if (/^[|\s-]+$/.test(trimmedLine)) {
+      // Skip separator lines (lines with only |, -, −, —, and spaces)
+      if (/^[|\s\-−—]+$/.test(trimmedLine)) {
         separatorFound = true;
         console.log('Found separator line:', trimmedLine);
         continue;
@@ -114,12 +122,16 @@ const convertAsciiTableToHtml = (text: string): string => {
     }
 
     if (headers.length > 0) {
+      console.log('Found table with headers:', headers);
+      console.log('Table rows count:', rows.length);
       tables.push({
         start: tableStart,
         end: tableEnd,
         headers,
         rows
       });
+    } else {
+      console.log('No headers found for table at lines', tableStart, 'to', tableEnd);
     }
 
     currentIndex = tableEnd;
