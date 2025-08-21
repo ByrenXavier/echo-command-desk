@@ -309,6 +309,8 @@ const commandSections = [
     title: "📊 Record Agent Tools",
     commands: [
       { label: "Check DO", example: "check do" },
+      { label: "Check PO", example: "check po" },
+      { label: "Check Open PO", example: "check open po" },
       { label: "Check Holding Area", example: "check holding area" },
       { label: "Check Full Treatment", example: "check full treatment" },
       { label: "Check Full NCR", example: "check full ncr" },
@@ -345,6 +347,7 @@ const ChatPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showSessions, setShowSessions] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ts = () => new Date().toLocaleTimeString();
@@ -495,6 +498,41 @@ const ChatPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Error updating session title:', error);
+    }
+  };
+
+  const downloadInventory = async () => {
+    setDownloading(true);
+    try {
+      const XLSX = await import('xlsx');
+      const { data: sgdData, error: sgdError } = await supabase
+        .from('current_balance_sgd')
+        .select('*');
+      if (sgdError) {
+        toast({ title: "Error", description: "Failed to fetch SGD inventory data", variant: "destructive" });
+        return;
+      }
+      const { data: usdData, error: usdError } = await supabase
+        .from('current_balance_usd')
+        .select('*');
+      if (usdError) {
+        toast({ title: "Error", description: "Failed to fetch USD inventory data", variant: "destructive" });
+        return;
+      }
+      const workbook = XLSX.utils.book_new();
+      const sgdWorksheet = XLSX.utils.json_to_sheet(sgdData || []);
+      const usdWorksheet = XLSX.utils.json_to_sheet(usdData || []);
+      XLSX.utils.book_append_sheet(workbook, sgdWorksheet, 'Current Balance SGD');
+      XLSX.utils.book_append_sheet(workbook, usdWorksheet, 'Current Balance USD');
+      const date = new Date().toISOString().split('T')[0];
+      const filename = `BSL_Inventory_${date}.xlsx`;
+      XLSX.writeFile(workbook, filename);
+      toast({ title: "Success", description: "Inventory data downloaded successfully" });
+    } catch (error) {
+      console.error('Error downloading inventory:', error);
+      toast({ title: "Error", description: "Failed to download inventory data", variant: "destructive" });
+    } finally {
+      setDownloading(false);
     }
   };
 
@@ -843,6 +881,14 @@ const ChatPage: React.FC = () => {
                   AI Assistant
                 </CardTitle>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={downloadInventory}
+                    disabled={downloading}
+                  >
+                    {downloading ? "Downloading..." : "Download Inventory"}
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
