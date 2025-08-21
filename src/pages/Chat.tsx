@@ -27,7 +27,7 @@ const generateId = () => {
 
 // Loading animation component
 const LoadingDots = () => (
-  <div className="flex space-x-1">
+  <div className="flex items-end space-x-1 h-6">
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
     <div className="w-2 h-2 bg-current rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
@@ -345,6 +345,7 @@ const ChatPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showSessions, setShowSessions] = useState(false);
   const [showCommands, setShowCommands] = useState(true);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const ts = () => new Date().toLocaleTimeString();
 
@@ -501,6 +502,92 @@ const ChatPage: React.FC = () => {
     fetchSessions();
   }, []);
 
+  // Subscribe to Supabase Realtime for assistant inserts in current session
+  useEffect(() => {
+    if (!currentSession) return;
+
+    const channel = (supabase as any)
+      .channel(`chat_messages_session_${currentSession.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `session_id=eq.${currentSession.id}` },
+        (payload: any) => {
+          try {
+            const row = payload.new;
+            if (!row) return;
+            if (row.role !== 'assistant') return;
+            const html = formatTextContent(String(row.content ?? ''));
+            const assistantMsg: Msg = {
+              id: row.id || generateId(),
+              role: 'agent',
+              content: <div dangerouslySetInnerHTML={{ __html: html }} />,
+              ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
+            };
+            // Replace the latest loading dot message if present, else append
+            setMessages((prev) => {
+              const idx = prev.findIndex(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots);
+              if (idx !== -1) {
+                const copy = [...prev];
+                copy[idx] = assistantMsg;
+                return copy;
+              }
+              return [...prev, assistantMsg];
+            });
+            setSending(false);
+          } catch (e) {
+            console.error('Realtime handler error:', e);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try { (supabase as any).removeChannel(channel); } catch {}
+      if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+    };
+  }, [currentSession]);
+
+  // Fallback polling if Realtime is unavailable
+  const startAssistantPolling = (sessionId: string, sinceISO: string, loadingId: string) => {
+    if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+    const started = Date.now();
+    const poll = async () => {
+      try {
+        const { data, error } = await (supabase as any)
+          .from('chat_messages')
+          .select('*')
+          .eq('session_id', sessionId)
+          .eq('role', 'assistant')
+          .gt('created_at', sinceISO)
+          .order('created_at', { ascending: true })
+          .limit(1);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          const row = data[0];
+          const html = formatTextContent(String(row.content ?? ''));
+          const assistantMsg: Msg = {
+            id: row.id || generateId(),
+            role: 'agent',
+            content: <div dangerouslySetInnerHTML={{ __html: html }} />,
+            ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
+          };
+          setMessages((prev) => prev.map(m => m.id === loadingId ? assistantMsg : m));
+          setSending(false);
+          if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+          return;
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+      // stop after 5 minutes
+      if (Date.now() - started > 5 * 60 * 1000) {
+        if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+      }
+    };
+    pollRef.current = setInterval(poll, 2500);
+    // kick off immediately
+    void poll();
+  };
+
   useEffect(() => {
     if (inputRef.current) {
       inputRef.current.focus();
@@ -547,7 +634,12 @@ const ChatPage: React.FC = () => {
     setMessages((m) => [...m, userMsg]);
 
     // Add loading message
-    const loadingMsg: Msg = { id: generateId(), role: "agent", content: <LoadingDots />, ts: ts() };
+    const loadingMsg: Msg = { id: generateId(), role: "agent", content: (
+      <div className="text-muted-foreground text-sm flex items-center gap-2">
+        <span>Retrieving your information… this may take a bit</span>
+        <LoadingDots />
+      </div>
+    ), ts: ts() };
     setMessages((m) => [...m, loadingMsg]);
 
     // Save user message to database
@@ -704,67 +796,14 @@ const ChatPage: React.FC = () => {
         webhookResponse = { error: webhookError instanceof Error ? webhookError.message : 'Unknown error' };
       }
 
-      // Replace loading message with actual response
-      setMessages((m) => m.map(msg => 
-        msg.id === loadingMsg.id 
-          ? { ...msg, content: response }
-          : msg
-      ));
+      // Do not set assistant response here. We will wait for Supabase Realtime insert
+      // from n8n and then update UI when it arrives.
 
-      // Extract original text content for database storage
-      let originalText = '';
-      if (typeof response === 'string') {
-        originalText = response;
-      } else if (response && typeof response === 'object') {
-        // Try to extract text from React component
-        if ((response as any).props?.dangerouslySetInnerHTML?.__html) {
-          // This is our converted HTML, we need to get the original text
-          // We need to store the original text that was converted, not the HTML
-          // For now, let's store the webhook response text if available
-          if (webhookResponse && webhookResponse.output) {
-            originalText = webhookResponse.output;
-          } else if (webhookResponse && webhookResponse.message) {
-            originalText = webhookResponse.message;
-          } else if (webhookResponse && webhookResponse.content) {
-            originalText = webhookResponse.content;
-          } else if (webhookResponse && webhookResponse.text) {
-            originalText = webhookResponse.text;
-          } else if (webhookResponse && webhookResponse.response) {
-            originalText = webhookResponse.response;
-          } else {
-            // Fallback: try to extract from the HTML content
-            const htmlContent = (response as any).props.dangerouslySetInnerHTML.__html;
-            // Remove HTML tags to get text content
-            originalText = htmlContent.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-          }
-        } else if ((response as any).props?.children) {
-          // Simple text content
-          originalText = String((response as any).props.children);
-        } else if (React.isValidElement(response)) {
-          // This is a React component (like our ScrollableTable)
-          // We need to get the original text that was used to create this component
-          if (webhookResponse && webhookResponse.output) {
-            originalText = webhookResponse.output;
-          } else if (webhookResponse && webhookResponse.message) {
-            originalText = webhookResponse.message;
-          } else if (webhookResponse && webhookResponse.content) {
-            originalText = webhookResponse.content;
-          } else if (webhookResponse && webhookResponse.text) {
-            originalText = webhookResponse.text;
-          } else if (webhookResponse && webhookResponse.response) {
-            originalText = webhookResponse.response;
-          } else {
-            // Fallback: try to extract text from React component
-            originalText = '[REACT_COMPONENT]';
-          }
-        } else {
-          // Fallback
-          originalText = '[COMPLEX_RESPONSE]';
-        }
+      // Start fallback polling in case Realtime is unavailable
+      if (sessionToUse) {
+        const sinceISO = new Date().toISOString();
+        startAssistantPolling(sessionToUse.id, sinceISO, loadingMsg.id);
       }
-
-      // Save assistant message to database with original text
-      await saveMessage(sessionToUse!.id, "assistant", originalText, webhookResponse);
 
       // Update session title if it's still "New Chat"
       if (sessionToUse!.title === 'New Chat') {
@@ -781,10 +820,9 @@ const ChatPage: React.FC = () => {
           : msg
       ));
       toast({ title: "Failed", description: e?.message ?? "Something went wrong" });
-    } finally {
-      setSending(false);
-      setInput("");
-    }
+          } finally {
+        setInput("");
+      }
   };
 
   const commandChips = useMemo(() => commandSections, []);
