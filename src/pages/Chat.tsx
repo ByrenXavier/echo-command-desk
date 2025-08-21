@@ -139,20 +139,35 @@ const convertAsciiTableToHtml = (text: string): string => {
         }
       }
 
-      // Add HTML table with strict width constraints
-      result += '<div style="width: 100%; margin: 1rem 0; max-width: 100%; overflow: hidden; position: relative; box-sizing: border-box; min-width: 0; display: block;" class="table-wrapper"><div style="width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 0.5rem; position: relative; box-sizing: border-box; min-width: 0; max-width: 100%; display: block;" class="table-scroll-wrapper"><table style="width: max-content; min-width: 0; max-width: none; border-collapse: collapse; font-size: 0.75rem; table-layout: auto; display: table;">';
+      // Add HTML table with better responsive design
+      result += '<div style="width: 100%; margin: 1rem 0; overflow: hidden; position: relative; box-sizing: border-box;" class="table-wrapper"><div style="width: 100%; overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 0.5rem; position: relative; box-sizing: border-box; display: block;" class="table-scroll-wrapper"><table style="width: max-content; min-width: 100%; border-collapse: collapse; font-size: 0.75rem; table-layout: fixed; display: table;">';
       
       // Add header
       result += '<thead style="background-color: #f9fafb;"><tr>';
       table.headers.forEach(header => {
-        result += `<th style="padding: 0.5rem; text-align: left; font-weight: 500; color: #374151; border-bottom: 1px solid #d1d5db; white-space: nowrap;">${header}</th>`;
+        result += `<th style="padding: 0.5rem; text-align: left; font-weight: 500; color: #374151; border-bottom: 1px solid #d1d5db; white-space: nowrap; min-width: 80px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${header}</th>`;
       });
       result += '</tr></thead>';
       
       // Add body
       result += '<tbody>';
       table.rows.forEach((row, index) => {
-        result += `<tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafb'};"><td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap;">${row.join('</td><td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap;">')}</td></tr>`;
+        result += `<tr style="background-color: ${index % 2 === 0 ? '#ffffff' : '#f9fafb'};">`;
+        row.forEach(cell => {
+          // Handle empty cells and long text
+          const cellContent = cell.trim() || '—';
+          const isLongText = cellContent.length > 50;
+          const isAddress = cellContent.toLowerCase().includes('address') || cellContent.includes('VDL') || cellContent.includes('Singapore');
+          
+          if (isAddress && cellContent.length > 100) {
+            // For addresses, show first part with ellipsis and full text on hover
+            const shortContent = cellContent.substring(0, 80) + '...';
+            result += `<td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; white-space: nowrap; min-width: 80px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${cellContent}">${shortContent}</td>`;
+          } else {
+            result += `<td style="padding: 0.5rem; color: #111827; border-bottom: 1px solid #e5e7eb; ${isLongText ? 'white-space: normal; word-wrap: break-word; max-width: 200px;' : 'white-space: nowrap;'} min-width: 80px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;" title="${cellContent}">${cellContent}</td>`;
+          }
+        });
+        result += '</tr>';
       });
       result += '</tbody></table></div></div>';
 
@@ -264,7 +279,10 @@ const formatTextContent = (text: string): string => {
       .replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
       // Improve summary sections with better spacing
       .replace(/\*\*(.+?)\*\*:\s*/g, '<strong>$1:</strong> ')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      // Fix extra hyphens in bullet points
+      .replace(/^-+\s*/, '• ')
+      .replace(/^\s*-\s*/, '• ');
 
     // 6) Blockquotes and HR
     formatted = formatted
