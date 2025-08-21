@@ -257,11 +257,14 @@ const formatTextContent = (text: string): string => {
     // 4) Markdown/ASCII tables → convert
     formatted = convertAsciiTableToHtml(formatted);
 
-    // 5) Markdown headers
+    // 5) Markdown headers and improve summary formatting
     formatted = formatted
       .replace(/^###\s+(.+)$/gm, '<h3 class="text-lg font-semibold mt-4 mb-2">$1</h3>')
       .replace(/^##\s+(.+)$/gm, '<h2 class="text-xl font-bold mt-6 mb-3">$1</h2>')
-      .replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>');
+      .replace(/^#\s+(.+)$/gm, '<h1 class="text-2xl font-bold mt-8 mb-4">$1</h1>')
+      // Improve summary sections with better spacing
+      .replace(/\*\*(.+?)\*\*:\s*/g, '<strong>$1:</strong> ')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
     // 6) Blockquotes and HR
     formatted = formatted
@@ -304,8 +307,12 @@ const formatTextContent = (text: string): string => {
       .replace(/`([^`]+)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>')
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">$1</a>');
 
-    // 9) Paragraph spacing
-    formatted = formatted.replace(/\n\n+/g, '<br><br>');
+    // 9) Paragraph spacing and fix incomplete sentences
+    formatted = formatted
+      .replace(/\n\n+/g, '<br><br>')
+      // Fix incomplete sentences that end abruptly
+      .replace(/([^.!?])\n([A-Z][a-z])/g, '$1 $2')
+      .replace(/([^.!?])\s*$/, '$1...'); // Add ellipsis to incomplete sentences
 
     // 10) If looks like full HTML document, show as code rather than render raw page
     if (/<!DOCTYPE html>|<html[\s>]/i.test(raw)) {
@@ -610,6 +617,7 @@ const ChatPage: React.FC = () => {
     const started = Date.now();
     const poll = async () => {
       try {
+        console.log(`Polling for assistant message in session ${sessionId} since ${sinceISO}`);
         const { data, error } = await (supabase as any)
           .from('chat_messages')
           .select('*')
@@ -619,6 +627,7 @@ const ChatPage: React.FC = () => {
           .order('created_at', { ascending: true })
           .limit(1);
         if (!error && Array.isArray(data) && data.length > 0) {
+          console.log('Found assistant message via polling:', data[0]);
           const row = data[0];
           const html = formatTextContent(String(row.content ?? ''));
           const assistantMsg: Msg = {
@@ -635,9 +644,17 @@ const ChatPage: React.FC = () => {
       } catch (e) {
         console.error('Polling error:', e);
       }
-      // stop after 3 minutes
-      if (Date.now() - started > 3 * 60 * 1000) {
+      // stop after 5 minutes (increased from 3 minutes)
+      if (Date.now() - started > 5 * 60 * 1000) {
+        console.log('Polling timeout reached after 5 minutes');
         if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+        // Replace loading message with timeout error
+        setMessages((prev) => prev.map(m => 
+          m.id === loadingId 
+            ? { ...m, content: <p className="text-destructive">Response timeout after 5 minutes. Please try again.</p> }
+            : m
+        ));
+        setSending(false);
       }
     };
     pollRef.current = setInterval(poll, 2500);
