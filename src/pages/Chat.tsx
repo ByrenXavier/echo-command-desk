@@ -884,17 +884,17 @@ const ChatPage: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={downloadInventory}
-                    disabled={downloading}
+                    onClick={() => window.open('https://docs.google.com/spreadsheets/d/1DLvGtHU2v1m-xDKo_Jqwct0RZUziwW0FfK5OLy30R4E/edit?usp=sharing', '_blank')}
                   >
-                    {downloading ? "Downloading..." : "Download Inventory"}
+                    Check Inventory
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => window.open('https://docs.google.com/spreadsheets/d/1DLvGtHU2v1m-xDKo_Jqwct0RZUziwW0FfK5OLy30R4E/edit?usp=sharing', '_blank')}
+                    onClick={downloadInventory}
+                    disabled={downloading}
                   >
-                    Check Inventory
+                    {downloading ? "Downloading..." : "Download Inventory"}
                   </Button>
                   <Button
                     variant="outline"
