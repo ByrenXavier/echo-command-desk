@@ -892,6 +892,13 @@ const ChatPage: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => window.open('https://docs.google.com/spreadsheets/d/1DLvGtHU2v1m-xDKo_Jqwct0RZUziwW0FfK5OLy30R4E/edit?usp=sharing', '_blank')}
+                  >
+                    Check Inventory
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={() => setShowCommands(!showCommands)}
                   >
                     <MessageSquare className="h-3 w-3 mr-1" />
