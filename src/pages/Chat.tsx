@@ -312,7 +312,8 @@ const commandSections = [
       { label: "Check PO", example: "check po" },
       { label: "Check Open PO", example: "check open po" },
       { label: "Check Holding Area", example: "check holding area" },
-      { label: "Check Full Treatment", example: "check full treatment" },
+      { label: "Check NCR", example: "check ncr" },
+      { label: "Check Treatment", example: "check treatment" },
     ],
   },
   {
@@ -787,7 +788,7 @@ const ChatPage: React.FC = () => {
           const mockResponse = `Holding Area Status:\n\n| Part | Quantity | Location | Status |\n|------|----------|----------|--------|\n| PN-100 | 5 | Holding A | Ready |\n| PN-200 | 12 | Holding B | Processing |\n| PN-300 | 3 | Holding C | Pending |`;
           const convertedContent = formatTextContent(mockResponse);
           response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-        } else if (lower.includes("check full treatment")) {
+        } else if (lower.includes("check treatment")) {
           const r = await checkFullTreatment();
           const mockResponse = `Treatment Status:\n\n| Item | Stage | Duration | Status |\n|------|-------|----------|--------|\n| MI-203 | Heat Treat | 2 hours | In Progress |\n| MI-204 | Surface Finish | 1 hour | Completed |\n| MI-205 | Quality Check | 30 min | Pending |`;
           const convertedContent = formatTextContent(mockResponse);
