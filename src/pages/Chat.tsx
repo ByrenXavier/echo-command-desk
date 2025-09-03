@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Send, Copy, Plus, MessageSquare, Clock } from "lucide-react";
+import { Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -310,7 +311,8 @@ const commandSections = [
     commands: [
       { label: "Check DO", example: "check do" },
       { label: "Check PO", example: "check po" },
-      { label: "Check Open PO", example: "check open po" },
+      { label: "Check Customer Open PO", example: "check customer open po" },
+      { label: "Check Supplier Open PO", example: "check supplier open po" },
       { label: "Check Holding Area", example: "check holding area" },
       { label: "Check NCR", example: "check ncr" },
       { label: "Check Treatment", example: "check treatment" },
@@ -340,6 +342,8 @@ const ChatPage: React.FC = () => {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chatAreaRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Session management
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -445,6 +449,37 @@ const ChatPage: React.FC = () => {
       setMessages(displayMessages);
       setCurrentSession(session);
       setShowSessions(false);
+      
+      // Check for any pending assistant responses that might have been missed
+      const lastMessage = data && data.length > 0 ? data[data.length - 1] : null;
+      if (lastMessage && lastMessage.role === 'user') {
+        // If the last message is from user, check if there's a pending assistant response
+        try {
+          const { data: pendingData } = await (supabase as any)
+            .from('chat_messages')
+            .select('*')
+            .eq('session_id', session.id)
+            .eq('role', 'assistant')
+            .gt('created_at', lastMessage.created_at)
+            .order('created_at', { ascending: true })
+            .limit(1);
+            
+          if (pendingData && pendingData.length > 0) {
+            console.log('Found pending assistant response, updating UI...');
+            const pendingRow = pendingData[0];
+            const html = formatTextContent(String(pendingRow.content ?? ''));
+            const pendingMsg: Msg = {
+              id: pendingRow.id || generateId(),
+              role: 'agent',
+              content: <div dangerouslySetInnerHTML={{ __html: html }} />,
+              ts: new Date(pendingRow.created_at || Date.now()).toLocaleTimeString(),
+            };
+            setMessages(prev => [...prev, pendingMsg]);
+          }
+        } catch (pendingError) {
+          console.error('Error checking for pending messages:', pendingError);
+        }
+      }
     } catch (error) {
       console.error('Error loading session:', error);
       toast({ title: "Error", description: "Failed to load chat", variant: "destructive" });
@@ -540,47 +575,91 @@ const ChatPage: React.FC = () => {
     fetchSessions();
   }, []);
 
+  // Auto-scroll chat area on new messages
+  useEffect(() => {
+    const el = chatAreaRef.current;
+    if (!el) return;
+    try {
+      el.scrollTop = el.scrollHeight;
+    } catch {}
+  }, [messages]);
+
   // Subscribe to Supabase Realtime for assistant inserts in current session
   useEffect(() => {
     if (!currentSession) return;
 
-    const channel = (supabase as any)
-      .channel(`chat_messages_session_${currentSession.id}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `session_id=eq.${currentSession.id}` },
-        (payload: any) => {
-          try {
-            const row = payload.new;
-            if (!row) return;
-            if (row.role !== 'assistant') return;
-            const html = formatTextContent(String(row.content ?? ''));
-            const assistantMsg: Msg = {
-              id: row.id || generateId(),
-              role: 'agent',
-              content: <div dangerouslySetInnerHTML={{ __html: html }} />,
-              ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
-            };
-            // Replace the latest loading dot message if present, else append
-            setMessages((prev) => {
-              const idx = prev.findIndex(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots);
-              if (idx !== -1) {
-                const copy = [...prev];
-                copy[idx] = assistantMsg;
-                return copy;
+    let channel: any;
+    let reconnectTimer: NodeJS.Timeout;
+
+    const setupChannel = () => {
+      try {
+        channel = (supabase as any)
+          .channel(`chat_messages_session_${currentSession.id}`)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `session_id=eq.${currentSession.id}` },
+            (payload: any) => {
+              try {
+                const row = payload.new;
+                if (!row) return;
+                if (row.role !== 'assistant') return;
+                const html = formatTextContent(String(row.content ?? ''));
+                const assistantMsg: Msg = {
+                  id: row.id || generateId(),
+                  role: 'agent',
+                  content: <div dangerouslySetInnerHTML={{ __html: html }} />,
+                  ts: new Date(row.created_at || Date.now()).toLocaleTimeString(),
+                };
+                // Replace the latest loading dot message if present, else append
+                setMessages((prev) => {
+                  const idx = prev.findIndex(m => typeof m.content === 'object' && (m.content as any)?.type === LoadingDots);
+                  if (idx !== -1) {
+                    const copy = [...prev];
+                    copy[idx] = assistantMsg;
+                    return copy;
+                  }
+                  return [...prev, assistantMsg];
+                });
+                setSending(false);
+              } catch (e) {
+                console.error('Realtime handler error:', e);
               }
-              return [...prev, assistantMsg];
-            });
-            setSending(false);
-          } catch (e) {
-            console.error('Realtime handler error:', e);
+            }
+          )
+          .subscribe((status: string) => {
+            console.log('Realtime subscription status:', status);
+            if (status === 'SUBSCRIBED') {
+              console.log('Realtime subscription established successfully');
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+              console.log('Realtime subscription failed, will retry...');
+              // Retry connection after a delay
+              reconnectTimer = setTimeout(() => {
+                if (currentSession) {
+                  console.log('Attempting to reconnect realtime...');
+                  setupChannel();
+                }
+              }, 2000);
+            }
+          });
+      } catch (error) {
+        console.error('Error setting up realtime channel:', error);
+        // Fallback to polling if realtime setup fails
+        reconnectTimer = setTimeout(() => {
+          if (currentSession) {
+            console.log('Retrying realtime setup...');
+            setupChannel();
           }
-        }
-      )
-      .subscribe();
+        }, 3000);
+      }
+    };
+
+    setupChannel();
 
     return () => {
-      try { (supabase as any).removeChannel(channel); } catch {}
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try { 
+        if (channel) (supabase as any).removeChannel(channel); 
+      } catch {}
       if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
     };
   }, [currentSession]);
@@ -589,8 +668,12 @@ const ChatPage: React.FC = () => {
   const startAssistantPolling = (sessionId: string, sinceISO: string, loadingId: string) => {
     if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
     const started = Date.now();
+    let pollAttempts = 0;
+    const maxAttempts = 120; // 5 minutes at 2.5 second intervals
+    
     const poll = async () => {
       try {
+        pollAttempts++;
         const { data, error } = await (supabase as any)
           .from('chat_messages')
           .select('*')
@@ -599,6 +682,7 @@ const ChatPage: React.FC = () => {
           .gt('created_at', sinceISO)
           .order('created_at', { ascending: true })
           .limit(1);
+        
         if (!error && Array.isArray(data) && data.length > 0) {
           const row = data[0];
           const html = formatTextContent(String(row.content ?? ''));
@@ -611,18 +695,38 @@ const ChatPage: React.FC = () => {
           setMessages((prev) => prev.map(m => m.id === loadingId ? assistantMsg : m));
           setSending(false);
           if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+          console.log('Assistant response found via polling');
           return;
         }
+        
+        // Log polling progress for debugging
+        if (pollAttempts % 10 === 0) {
+          console.log(`Polling attempt ${pollAttempts}/${maxAttempts} for session ${sessionId}`);
+        }
+        
       } catch (e) {
         console.error('Polling error:', e);
       }
-      // stop after 5 minutes
-      if (Date.now() - started > 5 * 60 * 1000) {
-        if (pollRef.current) { clearInterval(pollRef.current as any); pollRef.current = null; }
+      
+      // Stop after max attempts or 5 minutes
+      if (pollAttempts >= maxAttempts || Date.now() - started > 5 * 60 * 1000) {
+        if (pollRef.current) { 
+          clearInterval(pollRef.current as any); 
+          pollRef.current = null; 
+        }
+        console.log('Polling stopped after timeout or max attempts');
+        // If polling fails completely, show error message
+        setMessages((prev) => prev.map(m => 
+          m.id === loadingId 
+            ? { ...m, content: <p className="text-destructive">Failed to receive response. Please try again.</p> }
+            : m
+        ));
+        setSending(false);
       }
     };
+    
     pollRef.current = setInterval(poll, 2500);
-    // kick off immediately
+    // Kick off immediately
     void poll();
   };
 
@@ -840,7 +944,9 @@ const ChatPage: React.FC = () => {
       // Start fallback polling in case Realtime is unavailable
       if (sessionToUse) {
         const sinceISO = new Date().toISOString();
+        // Start polling immediately as backup
         startAssistantPolling(sessionToUse.id, sinceISO, loadingMsg.id);
+        console.log('Started fallback polling for session:', sessionToUse.id);
       }
 
       // Update session title if it's still "New Chat"
@@ -881,6 +987,37 @@ const ChatPage: React.FC = () => {
                   AI Assistant
                 </CardTitle>
                 <div className="flex items-center gap-2">
+                  <input ref={fileInputRef} type="file" className="hidden" onChange={async (e) => {
+                    const file = e.target.files && e.target.files[0];
+                    if (!file) return;
+                    try {
+                      const formData = new FormData();
+                      formData.append('file', file);
+                      if (currentSession?.id) formData.append('session_id', currentSession.id);
+                      formData.append('timestamp', new Date().toISOString());
+                      formData.append('current_url', window.location.href);
+                      const res = await fetch('https://bslunifyone.app.n8n.cloud/webhook/upload-file', {
+                        method: 'POST',
+                        body: formData,
+                      });
+                      if (!res.ok) {
+                        const t = await res.text();
+                        throw new Error(t || 'Upload failed');
+                      }
+                      toast({ title: 'Uploaded', description: `${file.name} uploaded successfully` });
+                    } catch (err: any) {
+                      toast({ title: 'Upload failed', description: err?.message || 'Please try again', variant: 'destructive' });
+                    } finally {
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }
+                  }} />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="h-3 w-3" />
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -991,7 +1128,7 @@ const ChatPage: React.FC = () => {
               
               {/* Chat Area */}
               <div className={`flex flex-col chat-container ${!showCommands && !showSessions ? 'w-full' : 'flex-1'}`} style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
-                <CardContent className="flex-1 overflow-y-auto p-3 space-y-3 chat-area" style={{ overflowX: 'hidden', maxWidth: '100%', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+                <CardContent ref={chatAreaRef} className="flex-1 overflow-y-auto p-3 space-y-3 chat-area" style={{ overflowX: 'hidden', maxWidth: '100%', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
                   {messages.length === 0 ? (
                     <div className="text-center text-muted-foreground py-4">
                       <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
