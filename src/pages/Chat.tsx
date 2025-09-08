@@ -322,8 +322,6 @@ const commandSections = [
     title: "🏭 Admin Functions",
     commands: [
       { label: "Generate DO", example: "generate do" },
-      { label: "DO Download Link", example: "do download link" },
-      { label: "Parse Supplier DO", example: "parse supplier do" },
     ],
   },
   {
@@ -332,7 +330,7 @@ const commandSections = [
       { label: "Approve PO", example: "approve po 12345" },
       { label: "Partial PO", example: "partial po 12345 qty 10" },
       { label: "Reject PO", example: "reject po 12345" },
-      { label: "USD→SGD Rate", example: "usd to sgd rate" },
+      { label: "USD→SGD Rate", example: "get latest USD-SGD rate" },
     ],
   },
 ];
@@ -580,7 +578,17 @@ const ChatPage: React.FC = () => {
     const el = chatAreaRef.current;
     if (!el) return;
     try {
-      el.scrollTop = el.scrollHeight;
+      const last = messages[messages.length - 1];
+      const prev = messages[messages.length - 2];
+      const bottom = el.scrollHeight - el.clientHeight;
+      // If the last two messages are user then assistant, keep a small offset
+      if (prev && last && prev.role === 'user' && last.role === 'agent') {
+        const offset = 120; // leave some room to show the user's message above
+        el.scrollTop = Math.max(0, bottom - offset);
+      } else {
+        // Default: scroll to bottom
+        el.scrollTop = bottom;
+      }
     } catch {}
   }, [messages]);
 
@@ -1015,6 +1023,9 @@ const ChatPage: React.FC = () => {
                     variant="outline"
                     size="sm"
                     onClick={() => fileInputRef.current?.click()}
+                    disabled={true}
+                    title="WIP - Work in Progress"
+                    className="opacity-50 cursor-not-allowed"
                   >
                     <Upload className="h-3 w-3" />
                   </Button>

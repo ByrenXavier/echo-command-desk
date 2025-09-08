@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { FileText, Eye } from "lucide-react";
+import { FileText, Eye, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
 interface QAInspection {
   qa_id: number;
@@ -42,6 +42,10 @@ const QAPage: React.FC = () => {
   const [from, setFrom] = useState<string>("");
   const [to, setTo] = useState<string>("");
   const [lastSync, setLastSync] = useState<string>(new Date().toLocaleString());
+  
+  // Sorting state
+  const [sortField, setSortField] = useState<string>("inspection_date");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   
   // Partial accept modal state
   const [showPartialAcceptModal, setShowPartialAcceptModal] = useState(false);
@@ -73,7 +77,7 @@ const QAPage: React.FC = () => {
     setLoading(true);
     try {
       let query = supabase.from("qa_inspections").select("qa_id, manufacturing_item, manufacturing_item_description, rev, inspection_status, inspected_by, inspection_date, created_at, quantity_received, quantity_passed, quantity_failed, inspection_notes", { count: "exact" })
-        .order("inspection_date", { ascending: false, nullsFirst: false });
+        .order(sortField, { ascending: sortDirection === "asc", nullsFirst: false });
 
       if (search.trim()) {
         // Simple OR search across manufacturing_item and description
@@ -107,7 +111,7 @@ const QAPage: React.FC = () => {
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, sortField, sortDirection]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -486,6 +490,22 @@ const QAPage: React.FC = () => {
     });
   };
 
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const getSortIcon = (field: string) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="h-4 w-4" />;
+    }
+    return sortDirection === "asc" ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />;
+  };
+
   const statusToClass = (status: string | null | undefined) => {
     const s = (status || '').toLowerCase();
     if (s === 'pass' || s === 'passed') return 'qa-pill qa-pill--pass';
@@ -570,14 +590,78 @@ const QAPage: React.FC = () => {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Manufacturing Item</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Rev</TableHead>
-                        <TableHead>Quantity Received</TableHead>
-                        <TableHead>Quantity Passed</TableHead>
-                        <TableHead>Quantity Failed</TableHead>
-                        <TableHead>Inspector</TableHead>
-                        <TableHead>Inspected At</TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("manufacturing_item")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Manufacturing Item
+                            {getSortIcon("manufacturing_item")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("manufacturing_item_description")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Description
+                            {getSortIcon("manufacturing_item_description")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("rev")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Rev
+                            {getSortIcon("rev")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("quantity_received")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Quantity Received
+                            {getSortIcon("quantity_received")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("quantity_passed")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Quantity Passed
+                            {getSortIcon("quantity_passed")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("quantity_failed")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Quantity Failed
+                            {getSortIcon("quantity_failed")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("inspected_by")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Inspector
+                            {getSortIcon("inspected_by")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("inspection_date")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Inspected At
+                            {getSortIcon("inspection_date")}
+                          </div>
+                        </TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
