@@ -23,6 +23,7 @@ export const AppSidebar = () => {
   const items = [
     { title: "Chat", url: "/chat", icon: MessageSquare },
     { title: "QA", url: "/qa", icon: ClipboardList },
+    { title: "Inventory Forms", url: "/inventory-forms", icon: ClipboardList },
   ];
 
   // Reset the flag when sidebar is manually expanded
