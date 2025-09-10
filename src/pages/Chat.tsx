@@ -310,7 +310,6 @@ const commandSections = [
     title: "📊 Record Agent Tools",
     commands: [
       { label: "Check DO", example: "check do" },
-      { label: "Check PO", example: "check po" },
       { label: "Check Customer Open PO", example: "check customer open po" },
       { label: "Check Supplier Open PO", example: "check supplier open po" },
       { label: "Check Holding Area", example: "check holding area" },
@@ -1066,8 +1065,7 @@ const ChatPage: React.FC = () => {
                     onClick={createSession}
                     disabled={loading}
                   >
-                    <Plus className="h-3 w-3 mr-1" />
-                    New Chat
+                    <Plus className="h-3 w-3" />
                   </Button>
                 </div>
               </div>
