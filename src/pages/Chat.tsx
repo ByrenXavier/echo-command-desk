@@ -6,7 +6,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Send, Copy, Plus, MessageSquare, Clock } from "lucide-react";
+import { Send, Copy, Plus, MessageSquare, Clock, RefreshCw } from "lucide-react";
 import { Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -568,6 +568,25 @@ const ChatPage: React.FC = () => {
     }
   };
 
+  const refreshCurrentSession = async () => {
+    if (!currentSession) {
+      toast({ title: "No active session", description: "Please start a new chat or select an existing one", variant: "destructive" });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Reload the current session's messages
+      await loadSession(currentSession);
+      toast({ title: "Refreshed", description: "Chat session refreshed successfully" });
+    } catch (error) {
+      console.error('Error refreshing session:', error);
+      toast({ title: "Error", description: "Failed to refresh chat session", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchSessions();
   }, []);
@@ -1058,6 +1077,15 @@ const ChatPage: React.FC = () => {
                   >
                     <Clock className="h-3 w-3 mr-1" />
                     Previous Chats
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={refreshCurrentSession}
+                    disabled={loading || !currentSession}
+                    title={currentSession ? "Refresh current chat session" : "No active session to refresh"}
+                  >
+                    <RefreshCw className="h-3 w-3" />
                   </Button>
                   <Button
                     variant="outline"

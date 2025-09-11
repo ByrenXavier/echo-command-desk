@@ -53,7 +53,8 @@ const QAPage: React.FC = () => {
   const [selectedQAId, setSelectedQAId] = useState<number | null>(null);
   const [partialAcceptData, setPartialAcceptData] = useState({
     type: "",
-    qty: ""
+    qty: "",
+    userName: ""
   });
 
   // Notes modal state
@@ -74,11 +75,11 @@ const QAPage: React.FC = () => {
     inspection_notes: ""
   });
 
-  // User identification modal state
+  // User identification modal state (only for accept action)
   const [showUserModal, setShowUserModal] = useState(false);
   const [userName, setUserName] = useState("");
   const [pendingAction, setPendingAction] = useState<{
-    type: 'accept' | 'partial_accept';
+    type: 'accept';
     qaId: number;
   } | null>(null);
 
@@ -214,14 +215,14 @@ const QAPage: React.FC = () => {
   };
 
   const handlePartial = async (id: number) => {
-    setPendingAction({ type: 'partial_accept', qaId: id });
-    setUserName("");
-    setShowUserModal(true);
+    setSelectedQAId(id);
+    setPartialAcceptData({ type: "", qty: "", userName: "" });
+    setShowPartialAcceptModal(true);
   };
 
   const handlePartialAcceptSubmit = async () => {
-    if (!selectedQAId || !partialAcceptData.type || !partialAcceptData.qty) {
-      toast({ title: "Error", description: "Please fill in all fields", variant: "destructive" });
+    if (!selectedQAId || !partialAcceptData.type || !partialAcceptData.qty || !partialAcceptData.userName.trim()) {
+      toast({ title: "Error", description: "Please fill in all fields including your name", variant: "destructive" });
       return;
     }
 
@@ -247,7 +248,7 @@ const QAPage: React.FC = () => {
           created_at: qaInspection.created_at
         },
         partial_acceptance_details: {
-          accepted_by: userName,
+          accepted_by: partialAcceptData.userName,
           acceptance_notes: 'Some quality criteria met, others need improvement',
           acceptance_date: new Date().toISOString(),
           partial_reason: 'Minor issues identified but overall acceptable',
@@ -280,12 +281,12 @@ const QAPage: React.FC = () => {
         throw new Error(`Webhook failed with status: ${webhookResponse.status} - ${errorText}`);
       }
 
-      toast({ title: "Partially accepted", description: `QA #${selectedQAId} marked as partially accepted by ${userName}.` });
+      toast({ title: "Partially accepted", description: `QA #${selectedQAId} marked as partially accepted by ${partialAcceptData.userName}.` });
       
       // Close modal and reset form
       setShowPartialAcceptModal(false);
       setSelectedQAId(null);
-      setPartialAcceptData({ type: "", qty: "" });
+      setPartialAcceptData({ type: "", qty: "", userName: "" });
       
       // Refresh the data to show updated status
       setTimeout(() => {
@@ -328,10 +329,6 @@ const QAPage: React.FC = () => {
 
     if (pendingAction.type === 'accept') {
       await performAccept(pendingAction.qaId, userName);
-    } else if (pendingAction.type === 'partial_accept') {
-      setSelectedQAId(pendingAction.qaId);
-      setPartialAcceptData({ type: "", qty: "" });
-      setShowPartialAcceptModal(true);
     }
 
     setPendingAction(null);
@@ -769,10 +766,22 @@ const QAPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>Partially Accept QA Inspection</DialogTitle>
             <DialogDescription>
-              Mark this QA inspection as partially accepted. Please provide details.
+              Mark this QA inspection as partially accepted. Please provide details and your name.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="userName" className="text-right">
+                Your Name *
+              </Label>
+              <Input
+                id="userName"
+                value={partialAcceptData.userName}
+                onChange={(e) => setPartialAcceptData({ ...partialAcceptData, userName: e.target.value })}
+                className="col-span-3"
+                placeholder="Enter your name"
+              />
+            </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="type" className="text-right">
                 Type
