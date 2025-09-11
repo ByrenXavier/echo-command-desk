@@ -26,7 +26,8 @@ interface QAInspection {
   created_at?: string | null;
   quantity_received?: number | null;
   quantity_passed?: number | null;
-  quantity_failed?: number | null;
+  quantity_ncr?: number | null;
+  quantity_treatment?: number | null;
   inspection_notes?: string | null;
 }
 
@@ -73,10 +74,18 @@ const QAPage: React.FC = () => {
     inspection_notes: ""
   });
 
+  // User identification modal state
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [userName, setUserName] = useState("");
+  const [pendingAction, setPendingAction] = useState<{
+    type: 'accept' | 'partial_accept';
+    qaId: number;
+  } | null>(null);
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      let query = supabase.from("qa_inspections").select("qa_id, manufacturing_item, manufacturing_item_description, rev, inspection_status, inspected_by, inspection_date, created_at, quantity_received, quantity_passed, quantity_failed, inspection_notes", { count: "exact" })
+      let query = supabase.from("qa_inspections").select("qa_id, manufacturing_item, manufacturing_item_description, rev, inspection_status, inspected_by, inspection_date, created_at, quantity_received, quantity_passed, quantity_ncr, quantity_treatment, inspection_notes", { count: "exact" })
         .order(sortField, { ascending: sortDirection === "asc", nullsFirst: false });
 
       if (search.trim()) {
@@ -116,8 +125,8 @@ const QAPage: React.FC = () => {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const exportCSV = () => {
-    const headers = ["manufacturing_item","manufacturing_item_description","rev","inspection_status","quantity_received","quantity_passed","quantity_failed","inspected_by","inspection_date"];
-    const rows = data.map((r) => [r.manufacturing_item ?? "", r.manufacturing_item_description ?? "", r.rev ?? "", r.inspection_status ?? "", r.quantity_received ?? "", r.quantity_passed ?? "", r.quantity_failed ?? "", r.inspected_by ?? "", r.inspection_date ?? ""]); 
+    const headers = ["manufacturing_item","manufacturing_item_description","rev","inspection_status","quantity_received","quantity_passed","quantity_ncr","quantity_treatment","inspected_by","inspection_date"];
+    const rows = data.map((r) => [r.manufacturing_item ?? "", r.manufacturing_item_description ?? "", r.rev ?? "", r.inspection_status ?? "", r.quantity_received ?? "", r.quantity_passed ?? "", r.quantity_ncr ?? "", r.quantity_treatment ?? "", r.inspected_by ?? "", r.inspection_date ?? ""]); 
     const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -205,9 +214,9 @@ const QAPage: React.FC = () => {
   };
 
   const handlePartial = async (id: number) => {
-    setSelectedQAId(id);
-    setPartialAcceptData({ type: "", qty: "" });
-    setShowPartialAcceptModal(true);
+    setPendingAction({ type: 'partial_accept', qaId: id });
+    setUserName("");
+    setShowUserModal(true);
   };
 
   const handlePartialAcceptSubmit = async () => {
@@ -238,7 +247,7 @@ const QAPage: React.FC = () => {
           created_at: qaInspection.created_at
         },
         partial_acceptance_details: {
-          accepted_by: 'QA Inspector',
+          accepted_by: userName,
           acceptance_notes: 'Some quality criteria met, others need improvement',
           acceptance_date: new Date().toISOString(),
           partial_reason: 'Minor issues identified but overall acceptable',
@@ -271,7 +280,7 @@ const QAPage: React.FC = () => {
         throw new Error(`Webhook failed with status: ${webhookResponse.status} - ${errorText}`);
       }
 
-      toast({ title: "Partially accepted", description: `QA #${selectedQAId} marked as partially accepted.` });
+      toast({ title: "Partially accepted", description: `QA #${selectedQAId} marked as partially accepted by ${userName}.` });
       
       // Close modal and reset form
       setShowPartialAcceptModal(false);
@@ -299,6 +308,36 @@ const QAPage: React.FC = () => {
   };
 
   const handleAccept = async (id: number) => {
+    setPendingAction({ type: 'accept', qaId: id });
+    setUserName("");
+    setShowUserModal(true);
+  };
+
+  const handleUserSubmit = async () => {
+    if (!userName.trim()) {
+      toast({ title: "Error", description: "Please enter your name", variant: "destructive" });
+      return;
+    }
+
+    if (!pendingAction) {
+      toast({ title: "Error", description: "No pending action found", variant: "destructive" });
+      return;
+    }
+
+    setShowUserModal(false);
+
+    if (pendingAction.type === 'accept') {
+      await performAccept(pendingAction.qaId, userName);
+    } else if (pendingAction.type === 'partial_accept') {
+      setSelectedQAId(pendingAction.qaId);
+      setPartialAcceptData({ type: "", qty: "" });
+      setShowPartialAcceptModal(true);
+    }
+
+    setPendingAction(null);
+  };
+
+  const performAccept = async (id: number, userName: string) => {
     try {
       // Find the QA inspection data
       const qaInspection = data.find(item => item.qa_id === id);
@@ -321,7 +360,7 @@ const QAPage: React.FC = () => {
           created_at: qaInspection.created_at
         },
         acceptance_details: {
-          accepted_by: 'QA Inspector',
+          accepted_by: userName,
           acceptance_notes: 'All quality criteria met',
           acceptance_date: new Date().toISOString(),
           quality_score: '100%',
@@ -353,7 +392,7 @@ const QAPage: React.FC = () => {
         throw new Error(`Webhook failed with status: ${webhookResponse.status} - ${errorText}`);
       }
 
-      toast({ title: "Accepted", description: `QA #${id} accepted in full.` });
+      toast({ title: "Accepted", description: `QA #${id} accepted in full by ${userName}.` });
       
       // Refresh the data to show updated status
       setTimeout(() => {
@@ -637,11 +676,20 @@ const QAPage: React.FC = () => {
                         </TableHead>
                         <TableHead 
                           className="cursor-pointer hover:bg-muted/50 select-none" 
-                          onClick={() => handleSort("quantity_failed")}
+                          onClick={() => handleSort("quantity_ncr")}
                         >
                           <div className="flex items-center gap-2">
-                            Quantity Failed
-                            {getSortIcon("quantity_failed")}
+                            Quantity NCR
+                            {getSortIcon("quantity_ncr")}
+                          </div>
+                        </TableHead>
+                        <TableHead 
+                          className="cursor-pointer hover:bg-muted/50 select-none" 
+                          onClick={() => handleSort("quantity_treatment")}
+                        >
+                          <div className="flex items-center gap-2">
+                            Quantity Treatment
+                            {getSortIcon("quantity_treatment")}
                           </div>
                         </TableHead>
                         <TableHead 
@@ -668,7 +716,7 @@ const QAPage: React.FC = () => {
                     <TableBody>
                       {data.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={9} className="text-center text-muted-foreground">No results</TableCell>
+                          <TableCell colSpan={10} className="text-center text-muted-foreground">No results</TableCell>
                         </TableRow>
                       ) : (
                         data.map((row) => (
@@ -678,7 +726,8 @@ const QAPage: React.FC = () => {
                             <TableCell>{row.rev}</TableCell>
                             <TableCell>{row.quantity_received || '—'}</TableCell>
                             <TableCell>{row.quantity_passed || '—'}</TableCell>
-                            <TableCell>{row.quantity_failed || '—'}</TableCell>
+                            <TableCell>{row.quantity_ncr || '—'}</TableCell>
+                            <TableCell>{row.quantity_treatment || '—'}</TableCell>
                             <TableCell>{row.inspected_by || '—'}</TableCell>
                             <TableCell>{row.inspection_date ? new Date(row.inspection_date).toLocaleDateString() : '—'}</TableCell>
                             <TableCell className="text-right">
@@ -908,6 +957,41 @@ const QAPage: React.FC = () => {
               Cancel
             </Button>
             <Button onClick={handleAddPart}>Add QA Inspection</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Identification Modal */}
+      <Dialog open={showUserModal} onOpenChange={setShowUserModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>User Identification</DialogTitle>
+            <DialogDescription>
+              Please enter your name before proceeding with this action.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="userName" className="text-right">
+                Name *
+              </Label>
+              <Input
+                id="userName"
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                className="col-span-3"
+                placeholder="Enter your name"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowUserModal(false);
+              setPendingAction(null);
+            }}>
+              Cancel
+            </Button>
+            <Button onClick={handleUserSubmit}>Continue</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
