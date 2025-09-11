@@ -75,9 +75,12 @@ const QAPage: React.FC = () => {
     inspection_notes: ""
   });
 
-  // User identification modal state (only for accept action)
+  // Accept modal state (accept all / remaining + currency)
   const [showUserModal, setShowUserModal] = useState(false);
   const [userName, setUserName] = useState("");
+  const [acceptMode, setAcceptMode] = useState<'all' | 'remaining'>('all');
+  const [acceptRemainingQty, setAcceptRemainingQty] = useState<string>("");
+  const [acceptCurrency, setAcceptCurrency] = useState<'SGD' | 'USD'>('SGD');
   const [pendingAction, setPendingAction] = useState<{
     type: 'accept';
     qaId: number;
@@ -236,22 +239,22 @@ const QAPage: React.FC = () => {
 
       // Prepare data for webhook
       const webhookData = {
-        action: 'qa_partial_accept',
+        action: 'qa_partial_reject',
         qa_inspection: {
           qa_id: selectedQAId,
           part_number: qaInspection.manufacturing_item,
           manufacturing_item_description: qaInspection.manufacturing_item_description,
           rev: qaInspection.rev,
-          inspection_status: 'Partially Accepted',
+          inspection_status: 'Partially Rejected',
           inspected_by: qaInspection.inspected_by,
           inspection_date: qaInspection.inspection_date,
           created_at: qaInspection.created_at
         },
-        partial_acceptance_details: {
-          accepted_by: partialAcceptData.userName,
-          acceptance_notes: 'Some quality criteria met, others need improvement',
-          acceptance_date: new Date().toISOString(),
-          partial_reason: 'Minor issues identified but overall acceptable',
+        partial_rejection_details: {
+          rejected_by: partialAcceptData.userName,
+          rejection_notes: 'Some items rejected based on QA findings',
+          rejection_date: new Date().toISOString(),
+          rejection_reason: 'Issues identified requiring NCR/Treatment',
           type: partialAcceptData.type,
           quantity: parseInt(partialAcceptData.qty)
         },
@@ -263,9 +266,9 @@ const QAPage: React.FC = () => {
       };
 
       // Send data to webhook
-      console.log('Sending QA partial accept webhook data:', webhookData);
+      console.log('Sending QA partial reject webhook data:', webhookData);
       
-      const webhookResponse = await fetch('https://bslunifyone.app.n8n.cloud/webhook/qa_partialaccept', {
+      const webhookResponse = await fetch('https://bslunifyone.app.n8n.cloud/webhook/qa_partialreject', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -273,15 +276,15 @@ const QAPage: React.FC = () => {
         body: JSON.stringify(webhookData)
       });
 
-      console.log('QA partial accept webhook response status:', webhookResponse.status);
+      console.log('QA partial reject webhook response status:', webhookResponse.status);
 
       if (!webhookResponse.ok) {
         const errorText = await webhookResponse.text();
-        console.error('QA partial accept webhook error response:', errorText);
+        console.error('QA partial reject webhook error response:', errorText);
         throw new Error(`Webhook failed with status: ${webhookResponse.status} - ${errorText}`);
       }
 
-      toast({ title: "Partially accepted", description: `QA #${selectedQAId} marked as partially accepted by ${partialAcceptData.userName}.` });
+      toast({ title: "Partially rejected", description: `QA #${selectedQAId} marked as partially rejected by ${partialAcceptData.userName}.` });
       
       // Close modal and reset form
       setShowPartialAcceptModal(false);
@@ -325,16 +328,27 @@ const QAPage: React.FC = () => {
       return;
     }
 
+    if (acceptMode === 'remaining') {
+      const qty = parseInt(acceptRemainingQty);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        toast({ title: "Error", description: "Enter a valid remaining quantity", variant: "destructive" });
+        return;
+      }
+    }
+
     setShowUserModal(false);
 
     if (pendingAction.type === 'accept') {
-      await performAccept(pendingAction.qaId, userName);
+      const qty = acceptMode === 'remaining' ? parseInt(acceptRemainingQty) : undefined;
+      await performAccept(pendingAction.qaId, userName, acceptMode, qty, acceptCurrency);
     }
 
     setPendingAction(null);
+    setAcceptMode('all');
+    setAcceptRemainingQty("");
   };
 
-  const performAccept = async (id: number, userName: string) => {
+  const performAccept = async (id: number, userName: string, mode: 'all' | 'remaining', remainingQty: number | undefined, currency: 'SGD' | 'USD') => {
     try {
       // Find the QA inspection data
       const qaInspection = data.find(item => item.qa_id === id);
@@ -358,7 +372,10 @@ const QAPage: React.FC = () => {
         },
         acceptance_details: {
           accepted_by: userName,
-          acceptance_notes: 'All quality criteria met',
+          acceptance_type: mode === 'all' ? 'Accept All' : 'Accept Remaining',
+          accepted_currency: currency,
+          accepted_quantity: mode === 'remaining' ? remainingQty : (qaInspection.quantity_received ?? undefined),
+          acceptance_notes: mode === 'all' ? 'All quality criteria met' : 'Accepting remaining quantity',
           acceptance_date: new Date().toISOString(),
           quality_score: '100%',
           compliance_status: 'Fully compliant'
@@ -389,7 +406,10 @@ const QAPage: React.FC = () => {
         throw new Error(`Webhook failed with status: ${webhookResponse.status} - ${errorText}`);
       }
 
-      toast({ title: "Accepted", description: `QA #${id} accepted in full by ${userName}.` });
+      const acceptedText = webhookData.acceptance_details.acceptance_type === 'Accept All'
+        ? `accepted in full`
+        : `accepted remaining qty ${webhookData.acceptance_details.accepted_quantity}`;
+      toast({ title: "Accepted", description: `QA #${id} ${acceptedText} by ${userName}. (${currency})` });
       
       // Refresh the data to show updated status
       setTimeout(() => {
@@ -730,10 +750,10 @@ const QAPage: React.FC = () => {
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
                                 <Button variant="ghost" size="sm" className="qa-btn qa-btn--reject" onClick={() => handleReject(row.qa_id)} aria-label={`Reject QA ${row.qa_id}`}>Reject</Button>
-                                <Button variant="ghost" size="sm" className="qa-btn qa-btn--partial" onClick={() => handlePartial(row.qa_id)} aria-label={`Partially accept QA ${row.qa_id}`}>
-                                  <span className="text-xs leading-tight">Partially<br />accept</span>
+                                <Button variant="ghost" size="sm" className="qa-btn qa-btn--partial" onClick={() => handlePartial(row.qa_id)} aria-label={`Partial reject QA ${row.qa_id}`}>
+                                  <span className="text-xs leading-tight">Partial<br />reject</span>
                                 </Button>
-                                <Button variant="ghost" size="sm" className="qa-btn qa-btn--accept" onClick={() => handleAccept(row.qa_id)} aria-label={`Accept all for QA ${row.qa_id}`}>Accept all</Button>
+                                <Button variant="ghost" size="sm" className="qa-btn qa-btn--accept" onClick={() => handleAccept(row.qa_id)} aria-label={`Accept for QA ${row.qa_id}`}>Accept</Button>
                                 <Button variant="ghost" size="sm" onClick={() => handleViewNotes(row.qa_id)} aria-label={`View notes for QA ${row.qa_id}`}>
                                   <Eye className="h-4 w-4" />
                                 </Button>
@@ -764,9 +784,9 @@ const QAPage: React.FC = () => {
       <Dialog open={showPartialAcceptModal} onOpenChange={setShowPartialAcceptModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Partially Accept QA Inspection</DialogTitle>
+            <DialogTitle>Partially Reject QA Inspection</DialogTitle>
             <DialogDescription>
-              Mark this QA inspection as partially accepted. Please provide details and your name.
+              Mark this QA inspection as partially rejected. Please provide details and your name.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -812,7 +832,7 @@ const QAPage: React.FC = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPartialAcceptModal(false)}>Cancel</Button>
-            <Button onClick={handlePartialAcceptSubmit}>Partially Accept</Button>
+            <Button onClick={handlePartialAcceptSubmit}>Partially Reject</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -974,9 +994,9 @@ const QAPage: React.FC = () => {
       <Dialog open={showUserModal} onOpenChange={setShowUserModal}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>User Identification</DialogTitle>
+            <DialogTitle>Accept QA Inspection</DialogTitle>
             <DialogDescription>
-              Please enter your name before proceeding with this action.
+              Enter your name, choose acceptance type and currency.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
@@ -991,6 +1011,50 @@ const QAPage: React.FC = () => {
                 className="col-span-3"
                 placeholder="Enter your name"
               />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Acceptance</Label>
+              <div className="col-span-3 flex items-center gap-2">
+                <Button
+                  variant={acceptMode === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setAcceptMode('all')}
+                >
+                  Accept All
+                </Button>
+                <Button
+                  variant={acceptMode === 'remaining' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setAcceptMode('remaining')}
+                >
+                  Accept Remaining
+                </Button>
+              </div>
+            </div>
+            {acceptMode === 'remaining' && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="acceptQty" className="text-right">Quantity</Label>
+                <Input
+                  id="acceptQty"
+                  type="number"
+                  value={acceptRemainingQty}
+                  onChange={(e) => setAcceptRemainingQty(e.target.value)}
+                  className="col-span-3"
+                  placeholder="Enter quantity to accept"
+                />
+              </div>
+            )}
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Currency</Label>
+              <Select value={acceptCurrency} onValueChange={(v) => setAcceptCurrency(v as 'SGD' | 'USD')}>
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select currency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SGD">SGD</SelectItem>
+                  <SelectItem value="USD">USD</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
