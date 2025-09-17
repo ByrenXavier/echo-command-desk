@@ -6,10 +6,11 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Send, Copy, Plus, MessageSquare, Clock, RefreshCw, FileText } from "lucide-react";
+import { Send, Copy, Plus, MessageSquare, Clock, RefreshCw, FileText, MoreHorizontal } from "lucide-react";
 import { Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 
 
@@ -1051,54 +1052,80 @@ const ChatPage: React.FC = () => {
                   >
                     <Upload className="h-3 w-3" />
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => window.open('https://docs.google.com/spreadsheets/d/1DLvGtHU2v1m-xDKo_Jqwct0RZUziwW0FfK5OLy30R4E/edit?usp=sharing', '_blank')}
-                  >
-                    Check Inventory
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={downloadInventory}
-                    disabled={downloading}
-                  >
-                    {downloading ? "Downloading..." : "Download Inventory"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowCommands(!showCommands)}
-                  >
-                    <MessageSquare className="h-3 w-3 mr-1" />
-                    Commands
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowSessions(!showSessions)}
-                  >
-                    <Clock className="h-3 w-3 mr-1" />
-                    Previous Chats
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={refreshCurrentSession}
-                    disabled={loading || !currentSession}
-                    title={currentSession ? "Refresh current chat session" : "No active session to refresh"}
-                  >
-                    <RefreshCw className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={createSession}
-                    disabled={loading}
-                  >
-                    <Plus className="h-3 w-3" />
-                  </Button>
+                  {/* Actions visible on >= lg screens */}
+                  <div className="hidden lg:flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open('https://docs.google.com/spreadsheets/d/1DLvGtHU2v1m-xDKo_Jqwct0RZUziwW0FfK5OLy30R4E/edit?usp=sharing', '_blank')}
+                    >
+                      Check Inventory
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={downloadInventory}
+                      disabled={downloading}
+                    >
+                      {downloading ? "Downloading..." : "Download Inventory"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowCommands(!showCommands)}
+                    >
+                      <MessageSquare className="h-3 w-3 mr-1" />
+                      Commands
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowSessions(!showSessions)}
+                    >
+                      <Clock className="h-3 w-3 mr-1" />
+                      Previous Chats
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={refreshCurrentSession}
+                      disabled={loading || !currentSession}
+                      title={currentSession ? "Refresh current chat session" : "No active session to refresh"}
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={createSession}
+                      disabled={loading}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+
+                  {/* Compact overflow menu on < lg screens */}
+                  <div className="lg:hidden">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="outline" size="sm" aria-label="More actions">
+                          <MoreHorizontal className="h-3 w-3" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                        <DropdownMenuItem onSelect={() => window.open('https://docs.google.com/spreadsheets/d/1DLvGtHU2v1m-xDKo_Jqwct0RZUziwW0FfK5OLy30R4E/edit?usp=sharing', '_blank')}>Check Inventory</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => { if (!downloading) downloadInventory(); }} disabled={downloading}>
+                          {downloading ? "Downloading..." : "Download Inventory"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setShowCommands(v => !v)}>Toggle Commands</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setShowSessions(v => !v)}>Toggle Previous Chats</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => refreshCurrentSession()} disabled={loading || !currentSession}>Refresh</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => createSession()} disabled={loading}>New Chat</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </div>
               {currentSession && (

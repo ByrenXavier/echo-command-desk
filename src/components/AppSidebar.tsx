@@ -99,17 +99,7 @@ export const AppSidebar = () => {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <div className="mt-auto px-4 py-3">
-          <a
-            href="https://bslx3echohelpcenter.lovable.app/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <HelpCircle className="h-4 w-4" />
-            <span className="group-data-[collapsible=icon]:hidden">Help Center</span>
-          </a>
-        </div>
+        {/* Help Center footer link removed to avoid overlapping with floating Help Center button */}
       </SidebarContent>
     </Sidebar>
   );
