@@ -268,7 +268,7 @@ const QAPage: React.FC = () => {
       // Send data to webhook
       console.log('Sending QA partial reject webhook data:', webhookData);
       
-      const webhookResponse = await fetch('https://bslunifyone.app.n8n.cloud/webhook/qa_partialreject', {
+      const webhookResponse = await fetch('https://bslunifyone.app.n8n.cloud/webhook/qa_partialaccept', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1068,6 +1068,17 @@ const QAPage: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Help Center Button */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="fixed bottom-4 left-4 z-50 bg-white shadow-lg hover:bg-gray-50"
+        onClick={() => window.open('https://bslx3echohelpcenter.lovable.app/', '_blank')}
+      >
+        <FileText className="h-4 w-4 mr-2" />
+        Help Center
+      </Button>
     </>
   );
 };

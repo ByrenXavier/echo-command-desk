@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, FileText } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -744,6 +744,17 @@ const InventoryFormsPage: React.FC = () => {
           </Card>
         </AppLayout>
       </AppSidebarProvider>
+
+      {/* Help Center Button */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="fixed bottom-4 left-4 z-50 bg-white shadow-lg hover:bg-gray-50"
+        onClick={() => window.open('https://bslx3echohelpcenter.lovable.app/', '_blank')}
+      >
+        <FileText className="h-4 w-4 mr-2" />
+        Help Center
+      </Button>
     </>
   );
 };

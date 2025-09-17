@@ -6,7 +6,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Send, Copy, Plus, MessageSquare, Clock, RefreshCw } from "lucide-react";
+import { Send, Copy, Plus, MessageSquare, Clock, RefreshCw, FileText } from "lucide-react";
 import { Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -904,6 +904,8 @@ const ChatPage: React.FC = () => {
         }
       } catch (webhookError) {
         console.error('Webhook error:', webhookError);
+        console.log('Input that caused webhook error:', input);
+        console.log('Lowercase input:', lower);
         
         // Fallback to mock responses for specific commands if webhook fails
         if (lower.includes("check do")) {
@@ -930,9 +932,11 @@ const ChatPage: React.FC = () => {
           response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else if (lower.includes("generate do")) {
           const r = await generateDO();
+          console.log('generateDO result:', r);
           response = r.ok ? <a className="text-primary underline" href={r.link} target="_blank">Download DO</a> : "Error";
         } else if (lower.includes("download link")) {
           const r = await getDODownloadLink();
+          console.log('getDODownloadLink result:', r);
           response = r.ok ? <a className="text-primary underline" href={r.link} target="_blank">Latest DO</a> : "Error";
         } else if (lower.includes("parse supplier do")) {
           const r = await parseSupplierDO(null as any); // No file to pass
@@ -1236,6 +1240,17 @@ const ChatPage: React.FC = () => {
           </Card>
         </AppLayout>
       </AppSidebarProvider>
+
+      {/* Help Center Button */}
+      <Button
+        variant="outline"
+        size="sm"
+        className="fixed bottom-4 left-4 z-50 bg-white shadow-lg hover:bg-gray-50"
+        onClick={() => window.open('https://bslx3echohelpcenter.lovable.app/', '_blank')}
+      >
+        <FileText className="h-4 w-4 mr-2" />
+        Help Center
+      </Button>
     </>
   );
 };
