@@ -819,15 +819,13 @@ const ChatPage: React.FC = () => {
       let response: React.ReactNode = <p className="text-muted-foreground">Processing your request...</p>;
       let webhookResponse: any = null;
 
-      // Send to webhook for AI processing
+      // Send to BSL Backend AI Agent
       try {
-        const webhookPayload = {
-          action: 'send_message',
-          session_id: sessionToUse!.id,
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://bsl-backend-5t3o.onrender.com';
+
+        const apiPayload = {
           message: input,
-          timestamp: new Date().toISOString(),
-          user_agent: navigator.userAgent,
-          current_url: window.location.href,
+          session_id: sessionToUse!.id,
           context: {
             page: 'BSL QA Dashboard',
             user_type: 'QA Inspector',
@@ -835,77 +833,43 @@ const ChatPage: React.FC = () => {
           }
         };
 
-        console.log('Sending chat webhook data:', webhookPayload);
-        
-        const webhookFetchResponse = await fetch('https://bslunifyone.app.n8n.cloud/webhook/chat', {
+        console.log('Sending to BSL Backend:', apiPayload);
+
+        const apiFetchResponse = await fetch(`${API_BASE_URL}/ai-agent/chat`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(webhookPayload)
+          body: JSON.stringify(apiPayload)
         });
 
-        console.log('Chat webhook response status:', webhookFetchResponse.status);
+        console.log('BSL Backend response status:', apiFetchResponse.status);
 
-        if (!webhookFetchResponse.ok) {
-          const errorText = await webhookFetchResponse.text();
-          console.error('Chat webhook error response:', errorText);
-          throw new Error(`Webhook failed with status: ${webhookFetchResponse.status} - ${errorText}`);
+        if (!apiFetchResponse.ok) {
+          const errorText = await apiFetchResponse.text();
+          console.error('BSL Backend error response:', errorText);
+          throw new Error(`API request failed with status: ${apiFetchResponse.status} - ${errorText}`);
         }
 
-        const responseText = await webhookFetchResponse.text();
-        console.log('Chat webhook raw response:', responseText);
+        const responseData = await apiFetchResponse.json();
+        console.log('BSL Backend response:', responseData);
+        webhookResponse = responseData;
 
-        if (responseText.trim()) {
-          try {
-            const webhookData = JSON.parse(responseText);
-            console.log('Chat webhook parsed response:', webhookData);
-            webhookResponse = webhookData;
-            
-            // Handle different response formats from n8n
-                                      if (webhookData.output) {
-              // n8n returns { output: "message" }
-              const convertedContent = formatTextContent(webhookData.output);
-              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-            } else if (webhookData.message) {
-              // Alternative format
-              const convertedContent = formatTextContent(webhookData.message);
-              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-            } else if (webhookData.content) {
-              // Another alternative format
-              const convertedContent = formatTextContent(webhookData.content);
-              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-            } else if (webhookData.text) {
-              // Another alternative format
-              const convertedContent = formatTextContent(webhookData.text);
-              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-            } else if (typeof webhookData === 'string') {
-              // Direct string response
-              const convertedContent = formatTextContent(webhookData);
-              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-            } else if (webhookData.response) {
-              // Response field
-              const convertedContent = formatTextContent(webhookData.response);
-              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-            } else {
-              // Fallback: use the entire response as a string
-              const convertedContent = formatTextContent(JSON.stringify(webhookData));
-              response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
-            }
-            
-          } catch (parseError) {
-            console.error('Failed to parse webhook response as JSON:', parseError);
-            response = <p className="whitespace-pre-wrap">{responseText}</p>;
-            webhookResponse = { raw_response: responseText };
-          }
+        if (responseData.success && responseData.message) {
+          // BSL Backend returns { success, message, intent, command, session_id, metadata }
+          const convertedContent = formatTextContent(responseData.message);
+          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+        } else if (responseData.message) {
+          // Error response with message
+          const convertedContent = formatTextContent(responseData.message);
+          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
         } else {
-          console.log('Webhook returned empty response');
-          response = <p className="text-muted-foreground">I received your message! The AI service is currently being configured. Please check back later for responses.</p>;
-          webhookResponse = { status: 'configuring' };
+          // Fallback
+          response = <p className="text-muted-foreground">Received response from AI agent.</p>;
         }
-      } catch (webhookError) {
-        console.error('Webhook error:', webhookError);
-        console.log('Input that caused webhook error:', input);
+      } catch (apiError) {
+        console.error('API error:', apiError);
+        console.log('Input that caused API error:', input);
         console.log('Lowercase input:', lower);
         
         // Fallback to mock responses for specific commands if webhook fails
@@ -966,18 +930,16 @@ const ChatPage: React.FC = () => {
         } else {
           response = <p className="text-muted-foreground">I received your message, but there was a temporary issue with the AI service. Your message has been saved and will be processed when the service is available.</p>;
         }
-        webhookResponse = { error: webhookError instanceof Error ? webhookError.message : 'Unknown error' };
+        webhookResponse = { error: apiError instanceof Error ? apiError.message : 'Unknown error' };
       }
 
-      // Do not set assistant response here. We will wait for Supabase Realtime insert
-      // from n8n and then update UI when it arrives.
-
-      // Start fallback polling in case Realtime is unavailable
-      if (sessionToUse) {
-        const sinceISO = new Date().toISOString();
-        // Start polling immediately as backup
-        startAssistantPolling(sessionToUse.id, sinceISO, loadingMsg.id);
-        console.log('Started fallback polling for session:', sessionToUse.id);
+      // Show the API response directly
+      if (response) {
+        setMessages((m) => m.map(msg =>
+          msg.id === loadingMsg.id
+            ? { ...msg, content: response }
+            : msg
+        ));
       }
 
       // Update session title if it's still "New Chat"
@@ -997,6 +959,7 @@ const ChatPage: React.FC = () => {
       toast({ title: "Failed", description: e?.message ?? "Something went wrong" });
           } finally {
         setInput("");
+        setSending(false);
       }
   };
 
