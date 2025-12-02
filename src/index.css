@@ -326,45 +326,20 @@ All colors MUST be HSL.
     box-sizing: border-box;
   }
 
-  /* Force all content within chat to respect container bounds */
-  .chat-area > * {
+  /* DataTable scroll container - MUST allow horizontal scroll */
+  .table-scroll-container {
+    width: 100% !important;
     max-width: 100% !important;
-    box-sizing: border-box !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
 
-  /* Ensure tables don't expand their containers */
-  .chat-area table {
+  .table-scroll-container table {
+    width: auto !important;
+    min-width: 100% !important;
     max-width: none !important;
-    width: max-content !important;
-  }
-
-  /* Allow table containers to scroll */
-  .chat-area div[style*="overflow-x: auto"] {
-    overflow-x: auto !important;
-  }
-
-  /* Only constrain direct children of chat-area, not nested elements */
-  .chat-area > div {
-    max-width: 100% !important;
-    overflow-x: hidden !important;
-  }
-
-  /* Prevent any element from expanding beyond the chat container */
-  .chat-container * {
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-  }
-
-  /* Allow only table scroll containers to have auto overflow */
-  .chat-container div[style*="overflow-x: auto"] {
-    overflow-x: auto !important;
-    max-width: 100% !important;
-  }
-
-  /* Force all other divs to not overflow */
-  .chat-container div:not([style*="overflow-x: auto"]) {
-    overflow-x: hidden !important;
-    max-width: 100% !important;
   }
 
   /* Specific table wrapper constraints */

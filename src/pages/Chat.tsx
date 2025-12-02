@@ -11,6 +11,7 @@ import { Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import DataTable from "@/components/DataTable";
 
 
 
@@ -287,7 +288,20 @@ async function partialPO(id: string, qty: number) { await wait(500); return { ok
 async function rejectPO(id: string) { await wait(500); return { ok: true, id } }
 async function getUsdToSgdRate() { await wait(400); return { ok: true, rate: 1.34 } }
 
-type Msg = { id: string; role: "user" | "agent"; content: React.ReactNode; ts: string };
+interface TableData {
+  data: Record<string, any>[];
+  headers: string[];
+  recordCount: number;
+  tableName: string;
+}
+
+type Msg = {
+  id: string;
+  role: "user" | "agent";
+  content: React.ReactNode;
+  ts: string;
+  tableData?: TableData;
+};
 
 interface ChatSession {
   id: string;
@@ -822,7 +836,7 @@ const ChatPage: React.FC = () => {
       // Send to BSL Backend AI Agent
       try {
         const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://bsl-backend-5t3o.onrender.com';
-
+        // const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
         const apiPayload = {
           message: input,
           session_id: sessionToUse!.id,
@@ -856,9 +870,38 @@ const ChatPage: React.FC = () => {
         webhookResponse = responseData;
 
         if (responseData.success && responseData.message) {
-          // BSL Backend returns { success, message, intent, command, session_id, metadata }
-          const convertedContent = formatTextContent(responseData.message);
-          response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          // BSL Backend returns { success, message, intent, command, session_id, raw_data, headers, record_count }
+
+          // Check if raw_data is available (direct database results)
+          if (responseData.raw_data && responseData.raw_data.length > 0 && responseData.headers) {
+            // Store table data for DataTable component (with pagination)
+            const tableName = responseData.command?.table_name || 'database';
+            const tableDataObj: TableData = {
+              data: responseData.raw_data,
+              headers: responseData.headers,
+              recordCount: responseData.record_count || responseData.raw_data.length,
+              tableName: tableName,
+            };
+
+            // Update message with table data
+            setMessages((m) => m.map(msg =>
+              msg.id === loadingMsg.id
+                ? {
+                    ...msg,
+                    content: null,
+                    tableData: tableDataObj
+                  }
+                : msg
+            ));
+            console.log(`Stored ${responseData.raw_data.length} records for DataTable component`);
+
+            // Skip the default response update below
+            response = null;
+          } else {
+            // Fallback to formatted text (for non-table responses like greetings)
+            const convertedContent = formatTextContent(responseData.message);
+            response = <div dangerouslySetInnerHTML={{ __html: convertedContent }} />;
+          }
         } else if (responseData.message) {
           // Error response with message
           const convertedContent = formatTextContent(responseData.message);
@@ -1159,7 +1202,7 @@ const ChatPage: React.FC = () => {
               
               {/* Chat Area */}
               <div className={`flex flex-col chat-container ${!showCommands && !showSessions ? 'w-full' : 'flex-1'}`} style={{ minWidth: 0, maxWidth: '100%', boxSizing: 'border-box' }}>
-                <CardContent ref={chatAreaRef} className="flex-1 overflow-y-auto p-3 space-y-3 chat-area" style={{ overflowX: 'hidden', maxWidth: '100%', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+                <CardContent ref={chatAreaRef} className="flex-1 overflow-y-auto p-3 space-y-3 chat-area" style={{ maxWidth: '100%', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
                   {messages.length === 0 ? (
                     <div className="text-center text-muted-foreground py-4">
                       <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
@@ -1188,15 +1231,29 @@ const ChatPage: React.FC = () => {
                             <div className="text-xs opacity-70 mt-1">{message.ts}</div>
                           </div>
                         ) : (
-                          // AI message - card with independent scrolling
-                          <Card className="w-full message-card" style={{ maxWidth: '100%', overflow: 'hidden', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
-                            <CardContent className="p-3" style={{ width: '100%', maxWidth: '100%', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box' }}>
-                              <div style={{ width: '100%', maxWidth: '100%', overflow: 'hidden', minWidth: 0, boxSizing: 'border-box', position: 'relative' }}>
-                                {message.content}
-                              </div>
-                              <div className="text-xs text-muted-foreground mt-2">{message.ts}</div>
-                            </CardContent>
-                          </Card>
+                          // AI message - card with table support
+                          <div className="w-full message-card" style={{ maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                            <Card>
+                              <CardContent className="p-3">
+                                {message.tableData ? (
+                                  <div style={{ width: '100%', overflow: 'visible' }}>
+                                    <DataTable
+                                      data={message.tableData.data}
+                                      headers={message.tableData.headers}
+                                      recordCount={message.tableData.recordCount}
+                                      tableName={message.tableData.tableName}
+                                      pageSize={10}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div style={{ width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box' }}>
+                                    {message.content}
+                                  </div>
+                                )}
+                                <div className="text-xs text-muted-foreground mt-2">{message.ts}</div>
+                              </CardContent>
+                            </Card>
+                          </div>
                         )}
                       </div>
                     ))
